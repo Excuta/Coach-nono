@@ -3,6 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS sessions (
     id           BIGSERIAL PRIMARY KEY,
+    capture_id   TEXT UNIQUE,            -- string key from capture agent (YYYYMMDD_HHMMSS_car_track)
     game         TEXT NOT NULL,
     car          TEXT NOT NULL,
     track        TEXT NOT NULL,
