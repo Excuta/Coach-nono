@@ -5,16 +5,16 @@ import time
 from coach.schema import CanonicalSample, SessionContext
 
 _SESSION_TYPES: dict[int, str] = {
-    0: "unknown",
-    1: "practice",
-    2: "qualifying",
-    3: "superpole",
-    4: "race",
-    5: "hotlap",
-    6: "hotstint",
-    7: "superpole_session",
-    8: "drift",
-    9: "time_attack",
+    -1: "unknown",
+    0: "practice",
+    1: "qualifying",
+    2: "race",
+    3: "hotlap",
+    4: "time_attack",
+    5: "drift",
+    6: "drag",
+    7: "hotstint",
+    8: "superpole",
 }
 _ACC_LIVE = 2
 
@@ -22,7 +22,7 @@ _ACC_LIVE = 2
 class ACCSource:
     def __init__(self) -> None:
         self._asm = None
-        self._t0: float | None = None  # monotonic clock at first LIVE sample
+        self._t0: float | None = None
 
     # ------------------------------------------------------------------
     # TelemetrySource protocol
@@ -32,20 +32,21 @@ class ACCSource:
         from pyaccsharedmemory import accSharedMemory  # Windows-only; lazy import
         self._asm = accSharedMemory()
 
-    def context(self) -> SessionContext:
-        raw = self._asm.read_shared_memory()
-        g, s = raw.Graphics, raw.Statics
+    def context(self, raw=None) -> SessionContext:
+        if raw is None:
+            raw = self._asm.read_shared_memory()
+        g, s = raw.Graphics, raw.Static
         return SessionContext(
             game="acc",
-            car=_text(s.carModel),
-            track=_text(s.track),
-            session_type=_SESSION_TYPES.get(int(g.session), "unknown"),
-            conditions={"rain_intensity": int(getattr(g, "rainIntensity", 0))},
+            car=s.car_model.rstrip("\x00").strip(),
+            track=s.track.rstrip("\x00").strip(),
+            session_type=_SESSION_TYPES.get(g.session_type.value, "unknown"),
+            conditions={"rain_intensity": g.rain_intensity.value},
         )
 
     def read(self) -> CanonicalSample | None:
         raw = self._asm.read_shared_memory()
-        if int(raw.Graphics.status) != _ACC_LIVE:
+        if raw is None or raw.Graphics.status.value != _ACC_LIVE:
             self._t0 = None
             return None
         if self._t0 is None:
@@ -62,8 +63,6 @@ class ACCSource:
 
     # ------------------------------------------------------------------
     # Capture-agent helper: convert one raw read to a CanonicalSample.
-    # Callers that need completedLaps etc. use read_shared_memory() +
-    # to_sample() themselves so they only pay for one shared-memory read.
     # ------------------------------------------------------------------
 
     def read_shared_memory(self):
@@ -73,31 +72,22 @@ class ACCSource:
         g, p = raw.Graphics, raw.Physics
         return CanonicalSample(
             t=t,
-            lap_time=_ms(getattr(g, "iCurrentTime", None) or getattr(g, "currentTime", 0)),
-            spline=float(g.normalizedCarPosition),
-            distance_m=float(getattr(g, "distanceTraveled", 0.0)),
-            speed=float(p.speedKmh) / 3.6,
+            lap_time=g.current_time / 1000.0,
+            spline=float(g.normalized_car_position),
+            distance_m=float(g.distance_traveled),
+            speed=float(p.speed_kmh) / 3.6,
             throttle=float(p.gas),
             brake=float(p.brake),
-            steer=float(p.steerAngle),
+            steer=float(p.steer_angle),
             gear=int(p.gear),
-            rpm=float(p.rpms),
-            tyre_temp=tuple(p.tyreCoreTemperature),
-            tyre_press=tuple(p.wheelsPressure),
-            abs_active=bool(getattr(p, "absInAction", 0) or float(getattr(p, "abs", 0)) > 0.01),
-            tc_active=bool(getattr(p, "tcinAction", 0) or float(getattr(p, "tc", 0)) > 0.01),
+            rpm=float(p.rpm),
+            tyre_temp=_wheels_tuple(p.tyre_core_temp),
+            tyre_press=_wheels_tuple(p.wheel_pressure),
+            abs_active=float(p.abs) > 0.01,
+            tc_active=float(p.tc) > 0.01,
             fuel=float(p.fuel),
         )
 
 
-def _text(val) -> str:
-    if isinstance(val, (bytes, bytearray)):
-        return val.decode("utf-8", errors="ignore").rstrip("\x00").strip()
-    return str(val).rstrip("\x00").strip()
-
-
-def _ms(val) -> float:
-    try:
-        return int(val) / 1000.0
-    except (TypeError, ValueError):
-        return 0.0
+def _wheels_tuple(w) -> tuple:
+    return (w.front_left, w.front_right, w.rear_left, w.rear_right)

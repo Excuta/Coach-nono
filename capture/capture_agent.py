@@ -137,8 +137,12 @@ def run() -> None:
                 time.sleep(1.0)
                 continue
 
+            if raw is None:
+                time.sleep(POLL_INTERVAL)
+                continue
+
             g = raw.Graphics
-            status = int(g.status)
+            status = g.status.value
 
             if status != _ACC_LIVE:
                 if session_id is not None:
@@ -150,7 +154,7 @@ def run() -> None:
 
             # ---- First live sample: initialise session ----
             if session_id is None:
-                sc = source.context()
+                sc = source.context(raw)
                 car = sc.car or "unknown_car"
                 track = sc.track or "unknown_track"
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -163,7 +167,7 @@ def run() -> None:
                     "conditions": sc.conditions,
                 }
                 t0 = time.monotonic()
-                prev_completed = int(g.completedLaps)
+                prev_completed = g.completed_lap
                 log.info("Session started: %s  (car=%s  track=%s)", session_id, car, track)
 
             # ---- Accumulate sample ----
@@ -171,10 +175,10 @@ def run() -> None:
             lap_buf.append(source.to_sample(raw, t))
 
             # ---- Lap boundary ----
-            completed = int(g.completedLaps)
+            completed = g.completed_lap
             if completed > prev_completed:
-                lap_time_ms = int(getattr(g, "iLastTime", 0) or getattr(g, "lastTime", 0))
-                valid = bool(getattr(g, "isValidLap", 1))
+                lap_time_ms = g.last_time
+                valid = g.is_valid_lap
                 _write_lap(lap_buf, session_id, prev_completed, lap_time_ms, valid, ctx)
                 lap_buf = []
                 prev_completed = completed
