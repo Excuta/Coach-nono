@@ -294,7 +294,7 @@ else:
                 size=[p["size"] for p in pts],
                 color=color,
                 opacity=0.85,
-                line=dict(width=1, color="#ffffff33"),
+                line=dict(width=1, color="rgba(255,255,255,0.2)"),
             ),
             hovertemplate=(
                 "<b>%{y}</b><br>"
