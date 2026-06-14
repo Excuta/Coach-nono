@@ -277,11 +277,11 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [ ] End-to-end smoke test: drive 1 lap → row appears with status=pending
 
 ### Phase C — Tier 1: delta / "finds gaps"
-- [ ] `align.py`: resample a lap onto a common spline/distance grid
-- [ ] `delta.py`: cumulative time-delta vs distance against PB; per-corner loss table
-- [ ] PB management in `pbs` (auto-update when a faster valid lap lands)
-- [ ] `process.py` worker: claim lap (SKIP LOCKED) → align+delta → write `findings/` + db
-- [ ] Dashboard page: delta trace + corner-loss ranking
+- [x] `align.py`: resample a lap onto a common spline/distance grid
+- [x] `delta.py`: cumulative time-delta vs distance against PB; per-corner loss table
+- [x] PB management in `pbs` (auto-update when a faster valid lap lands)
+- [x] `process.py` worker: claim lap (SKIP LOCKED) → align+delta → write `findings/` + db
+- [x] Dashboard page: delta trace + corner-loss ranking
 - [ ] Verify resumability: kill `process` mid-run, restart, work completes
 
 ### Phase D — Tier 2: input coaching (+ 1.5 setups I/O)

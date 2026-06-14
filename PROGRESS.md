@@ -32,3 +32,19 @@
 **What's next:** Smoke test (Yahia drives 1 lap) then Phase C (align, delta, process worker, dashboard)
 
 **Blockers:** Smoke test needs real ACC session
+
+---
+
+## 2026-06-14 — Phase C complete (Tier 1 delta pipeline)
+
+**What changed:**
+- `coach/align.py`: `_extract_flying_lap` isolates flying lap from 0/1/2+ crossing buffers using iloc exclusive-end slice; `align()` resamples onto 1000-point spline grid via scipy interp1d
+- `coach/delta.py`: `compute_delta` produces cumulative time-delta trace + 20-sector loss table sorted worst-first
+- `coach/process.py`: SKIP LOCKED claim loop, stale-lease reclaim on startup, align+delta per lap, auto-updates PB when faster valid lap arrives, writes delta trace parquet + DB findings rows
+- `coach/dashboard.py`: Streamlit dark-theme app — session/lap selectors, delta trace Plotly chart, inputs overlay, sector-loss table with severity colouring
+- `services/pipeline/Dockerfile` + `pyproject.toml`: fixed two-step build (deps-layer cache, `setuptools.build_meta`)
+- Smoke-tested with 11 laps Ferrari 296 GT3 @ Paul Ricard — correct delta values, PB chain updates, dashboard 200 OK at localhost:8501
+
+**What's next:** Phase D — Tier 2 input coaching (`inputs.py` detectors: trail-brake, coasting, ABS/TC, corner overspeed, steering reversals)
+
+**Blockers:** None
