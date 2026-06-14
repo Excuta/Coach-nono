@@ -130,24 +130,28 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# Speed / inputs overlay (collapsible)
+# Peak speed metric + throttle/brake overlay
+if "speed" in trace.columns:
+    peak_kmh = float(trace["speed"].max()) * 3.6
+    st.metric("Peak speed", f"{peak_kmh:.0f} km/h")
+
 with st.expander("Inputs overlay"):
     fig2 = go.Figure()
     for col, color, name in [
-        ("speed",    "#f4a261", "Speed (m/s)"),
-        ("throttle", "#2a9d8f", "Throttle"),
-        ("brake",    "#e63946", "Brake"),
+        ("throttle", "#2a9d8f", "Throttle (%)"),
+        ("brake",    "#e63946", "Brake (%)"),
     ]:
         if col in trace.columns:
             fig2.add_trace(go.Scatter(
-                x=trace["spline"], y=trace[col],
+                x=trace["spline"], y=trace[col] * 100,
                 mode="lines", name=name,
-                line=dict(color=color, width=1.5),
+                line=dict(color=color, width=2),
             ))
     fig2.update_layout(
         height=250,
         xaxis_title="Track position",
-        margin=dict(l=50, r=20, t=20, b=40),
+        yaxis=dict(title="Input (%)", range=[0, 105]),
+        margin=dict(l=60, r=20, t=20, b=40),
         template="plotly_dark",
     )
     st.plotly_chart(fig2, use_container_width=True)
