@@ -121,6 +121,7 @@ def run() -> None:
     t0: float = 0.0          # monotonic time at session start
     lap_buf: list = []
     prev_completed: int = 0
+    lap_valid: bool = True    # tracks whether current lap is still valid
 
     try:
         while True:
@@ -168,20 +169,26 @@ def run() -> None:
                 }
                 t0 = time.monotonic()
                 prev_completed = g.completed_lap
+                lap_valid = True
                 log.info("Session started: %s  (car=%s  track=%s)", session_id, car, track)
 
             # ---- Accumulate sample ----
             t = time.monotonic() - t0
             lap_buf.append(source.to_sample(raw, t))
 
+            # Track invalidity across the lap — is_valid_lap resets to True on
+            # the crossing sample, so we must latch any False seen during the lap.
+            if not g.is_valid_lap:
+                lap_valid = False
+
             # ---- Lap boundary ----
             completed = g.completed_lap
             if completed > prev_completed:
                 lap_time_ms = g.last_time
-                valid = g.is_valid_lap
-                _write_lap(lap_buf, session_id, prev_completed, lap_time_ms, valid, ctx)
+                _write_lap(lap_buf, session_id, prev_completed, lap_time_ms, lap_valid, ctx)
                 lap_buf = []
                 prev_completed = completed
+                lap_valid = True  # reset for incoming lap
 
             # ---- Throttle to poll rate ----
             sleep_for = POLL_INTERVAL - (time.monotonic() - loop_start)
