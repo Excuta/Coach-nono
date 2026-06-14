@@ -1,0 +1,107 @@
+name: acc-coach
+
+# ---------------------------------------------------------------------------
+# Default `docker compose up -d`            -> CPU pipeline only (GPU stays free)
+# `docker compose --profile gpu up -d`      -> adds the LLM coach (uses the GPU)
+# `docker compose --profile gpu down`       -> frees the GPU, CPU pipeline keeps running
+# `docker compose up -d --scale process=4`  -> parallel lap processing
+# Named volumes persist across `down`. They are ONLY wiped by `down -v`.
+# ---------------------------------------------------------------------------
+
+x-pipeline-env: &pipeline-env
+  DATABASE_URL: postgresql://coach:coach@db:5432/coach
+  DATA_DIR: /data
+  PYTHONUNBUFFERED: "1"
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16   # plain postgres:16 also fine
+    environment:
+      POSTGRES_USER: coach
+      POSTGRES_PASSWORD: coach
+      POSTGRES_DB: coach
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # 01_schema.sql runs on first boot
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coach"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  ingest:
+    build: ./services/pipeline
+    command: ["python", "-m", "coach.ingest"]
+    environment: *pipeline-env
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  process:
+    build: ./services/pipeline
+    command: ["python", "-m", "coach.process"]
+    environment: *pipeline-env
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # scale at runtime: docker compose up -d --scale process=4
+
+  dashboard:
+    build: ./services/pipeline
+    command: ["streamlit", "run", "coach/dashboard.py",
+              "--server.port", "8501", "--server.address", "0.0.0.0"]
+    environment: *pipeline-env
+    volumes:
+      - ./data:/data
+    ports:
+      - "8501:8501"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----- GPU services (only started with --profile gpu) -----
+  coach-llm:
+    image: ollama/ollama:latest
+    profiles: ["gpu"]
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    restart: unless-stopped
+    # (newer Compose also supports the shorthand `gpus: all`)
+
+  coach:
+    build: ./services/pipeline
+    profiles: ["gpu"]
+    command: ["python", "-m", "coach.coach_service"]
+    environment:
+      <<: *pipeline-env
+      OLLAMA_URL: http://coach-llm:11434
+      COACH_MODEL: qwen2.5:7b-instruct-q4_K_M   # ~fits 8 GB; adjust as needed
+    volumes:
+      - ./data:/data
+    depends_on:
+      coach-llm:
+        condition: service_started
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  ollama-models:
