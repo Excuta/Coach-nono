@@ -1,0 +1,4 @@
+pyaccsharedmemory>=2.0
+pyarrow>=15.0
+pandas>=2.2
+python-dotenv>=1.0
