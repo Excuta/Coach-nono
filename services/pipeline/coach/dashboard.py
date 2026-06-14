@@ -197,3 +197,47 @@ else:
         use_container_width=True,
         hide_index=True,
     )
+
+# ---------------------------------------------------------------------------
+# Coaching notes (Tier 2 input findings)
+# ---------------------------------------------------------------------------
+
+_KIND_LABEL = {
+    "trail_brake":        "Trail-brake overlap",
+    "coasting":           "Coasting",
+    "lockup":             "Lockup / ABS",
+    "steering_reversal":  "Steering instability",
+    "throttle_spike":     "Throttle spike",
+    "short_shift":        "Short shift",
+    "corner_overspeed":   "Corner overspeed",
+}
+
+input_findings = _query(
+    """
+    SELECT corner, kind, severity, detail
+    FROM findings
+    WHERE lap_id = %s AND kind != 'sector_delta'
+    ORDER BY severity DESC, corner
+    """,
+    (selected_lap_id,),
+)
+
+st.subheader("Coaching notes")
+
+if not input_findings:
+    st.caption("No input coaching notes for this lap.")
+else:
+    rows = []
+    for f in input_findings:
+        detail = f.get("detail") or {}
+        rows.append({
+            "Sector": f["corner"],
+            "Finding": _KIND_LABEL.get(f["kind"], f["kind"]),
+            "Severity": round(f["severity"], 2),
+            "Fix": detail.get("fix", ""),
+        })
+    st.dataframe(
+        pd.DataFrame(rows),
+        use_container_width=True,
+        hide_index=True,
+    )
