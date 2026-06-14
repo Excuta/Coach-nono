@@ -48,3 +48,16 @@
 **What's next:** Phase D — Tier 2 input coaching (`inputs.py` detectors: trail-brake, coasting, ABS/TC, corner overspeed, steering reversals)
 
 **Blockers:** None
+
+---
+
+## 2026-06-14 — Phase C closeout + validity bug fix
+
+**What changed:**
+- `capture/capture_agent.py`: fixed lap validity — ACC resets `isValidLap` to True on the crossing sample, so reading it only at the boundary always returned True; now latches False across the entire lap
+- Resumability confirmed: simulated stale lease (claimed_at = 30 min ago), restarted process container, stale lease reclaimed and lap completed correctly
+- Manually corrected laps 4 and 6 in DB to `valid=false` (captured before the fix)
+
+**What's next:** Phase D — Tier 2 input coaching (`inputs.py`)
+
+**Blockers:** None

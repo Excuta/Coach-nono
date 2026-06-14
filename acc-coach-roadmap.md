@@ -282,7 +282,7 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [x] PB management in `pbs` (auto-update when a faster valid lap lands)
 - [x] `process.py` worker: claim lap (SKIP LOCKED) → align+delta → write `findings/` + db
 - [x] Dashboard page: delta trace + corner-loss ranking
-- [ ] Verify resumability: kill `process` mid-run, restart, work completes
+- [x] Verify resumability: kill `process` mid-run, restart, work completes
 
 ### Phase D — Tier 2: input coaching (+ 1.5 setups I/O)
 - [ ] `inputs.py` detectors: trail-brake overlap, coasting gap, lockups/ABS, corner overspeed,
