@@ -30,34 +30,34 @@ N_SECTORS = 20  # must match delta.py
 @dataclass
 class Thresholds:
     # trail-brake overlap: throttle on while braking simultaneously
-    trail_throttle_min: float = 0.05   # throttle fraction considered "on"
-    trail_brake_min: float = 0.15      # brake fraction considered "on"
-    trail_min_duration: int = 10       # min contiguous grid points to flag (~1% of lap)
+    trail_throttle_min: float = 0.055  # throttle fraction considered "on"
+    trail_brake_min: float = 0.165     # brake fraction considered "on"
+    trail_min_duration: int = 11       # min contiguous grid points to flag (~1.1% of lap)
 
     # coasting: neither throttle nor brake applied (sustained)
-    coast_throttle_max: float = 0.05
-    coast_brake_max: float = 0.05
-    coast_min_duration: int = 30       # min grid points (~3% of lap)
+    coast_throttle_max: float = 0.055
+    coast_brake_max: float = 0.055
+    coast_min_duration: int = 33       # min grid points (~3.3% of lap)
 
     # lockup / ABS engagement
-    lockup_brake_min: float = 0.80     # brake fraction for heavy braking zone
-    lockup_decel_threshold: float = 0.004  # speed drop per grid point (m/s) to flag lockup
+    lockup_brake_min: float = 0.88     # brake fraction for heavy braking zone
+    lockup_decel_threshold: float = 0.0044  # speed drop per grid point (m/s) to flag lockup
 
     # steering reversals (wheel sawing / instability)
-    reversal_window: int = 50          # half-window size in grid points
-    reversal_max_count: int = 5        # sign-change count within window to flag
+    reversal_window: int = 55          # half-window size in grid points
+    reversal_max_count: int = 6        # sign-change count within window to flag
 
     # throttle spike / roughness
-    throttle_spike_delta: float = 0.20  # throttle change per grid step to flag
+    throttle_spike_delta: float = 0.22  # throttle change per grid step to flag
     throttle_spike_min: int = 3         # min consecutive spiky points
 
     # short shift (upshift too early)
-    short_shift_rpm_frac: float = 0.75  # flag upshift below this fraction of session max RPM
+    short_shift_rpm_frac: float = 0.825  # flag upshift below this fraction of session max RPM
 
     # corner overspeed: braking while mid-corner (steer + brake simultaneously)
-    overspeed_brake_min: float = 0.30
-    overspeed_steer_min: float = 0.20
-    overspeed_min_duration: int = 15   # grid points
+    overspeed_brake_min: float = 0.33
+    overspeed_steer_min: float = 0.22
+    overspeed_min_duration: int = 17   # grid points
 
 
 def load_thresholds(car: str, track: str, config_path: Path | None = None) -> Thresholds:
