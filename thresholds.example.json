@@ -1,0 +1,30 @@
+{
+  "_comment": "Copy to data/config/thresholds.json and edit. All keys are optional — omit to keep the default.",
+  "default": {
+    "trail_throttle_min":      0.05,
+    "trail_brake_min":         0.15,
+    "trail_min_duration":      10,
+
+    "coast_throttle_max":      0.05,
+    "coast_brake_max":         0.05,
+    "coast_min_duration":      30,
+
+    "lockup_brake_min":        0.80,
+    "lockup_decel_threshold":  0.004,
+
+    "reversal_window":         50,
+    "reversal_max_count":      5,
+
+    "throttle_spike_delta":    0.20,
+    "throttle_spike_min":      3,
+
+    "short_shift_rpm_frac":    0.75,
+
+    "overspeed_brake_min":     0.30,
+    "overspeed_steer_min":     0.20,
+    "overspeed_min_duration":  15
+  },
+  "_combo_example_lamborghini_huracan_gt3_evo2_monza": {
+    "short_shift_rpm_frac": 0.80
+  }
+}

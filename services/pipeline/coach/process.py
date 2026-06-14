@@ -20,6 +20,7 @@ from coach.align import align
 from coach.config import cfg
 from coach.db import conn
 from coach.delta import compute_delta
+from coach import inputs
 
 logging.basicConfig(
     level=cfg.log_level,
@@ -123,22 +124,36 @@ def _upsert_pb(game: str, car: str, track: str, lap_id: str, lap_time: float) ->
     c.commit()
 
 
-def _insert_findings(lap_id: str, sectors: list[dict]) -> None:
+def _sectors_to_findings(sectors: list[dict]) -> list[dict]:
     if not sectors:
-        return
+        return []
     max_loss = max(abs(s["time_loss_s"]) for s in sectors) or 1.0
+    return [
+        {
+            "kind": "sector_delta",
+            "corner": s["sector"],
+            "severity": min(1.0, abs(s["time_loss_s"]) / max_loss),
+            "time_loss_s": s["time_loss_s"],
+            "detail": s,
+        }
+        for s in sectors
+    ]
+
+
+def _insert_findings(lap_id: str, findings: list[dict]) -> None:
     c = conn()
     with c.cursor() as cur:
         cur.execute("DELETE FROM findings WHERE lap_id = %s", (lap_id,))
-        for s in sectors:
-            severity = min(1.0, abs(s["time_loss_s"]) / max_loss)
+        for f in findings:
             cur.execute(
                 """
                 INSERT INTO findings (lap_id, corner, kind, severity, time_loss_s, detail)
-                VALUES (%s, %s, 'sector_delta', %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (lap_id, s["sector"], severity, s["time_loss_s"],
-                 psycopg2.extras.Json(s)),
+                (
+                    lap_id, f["corner"], f["kind"], f["severity"], f["time_loss_s"],
+                    psycopg2.extras.Json(f.get("detail", {})),
+                ),
             )
     c.commit()
 
@@ -202,19 +217,28 @@ def _process_lap(lap: dict) -> None:
     pb_meta = _get_pb(game, car, track)
     pb_aligned = _load_pb_aligned(game, car, track)
 
+    # Input coaching (run on all valid laps regardless of PB status)
+    input_findings: list[dict] = []
+    if valid:
+        thr = inputs.load_thresholds(car, track, cfg.thresholds_config)
+        input_findings = inputs.detect(aligned, thr)
+        log.info("Input detectors: %d finding(s)", len(input_findings))
+
     if pb_meta is None or pb_aligned is None:
         # First lap for this combo — register as PB and skip delta
         log.info("No PB found for %s/%s/%s — registering lap %s as PB", game, car, track, lap_id)
         if valid:
             _save_pb_aligned(game, car, track, aligned)
             _upsert_pb(game, car, track, lap_id, lap_time)
+        if input_findings:
+            _insert_findings(lap_id, input_findings)
         _mark_done(lap_id)
         return
 
     # Compute delta vs PB
     trace, sectors = compute_delta(aligned, pb_aligned)
     _save_delta_trace(lap_id, trace)
-    _insert_findings(lap_id, sectors)
+    _insert_findings(lap_id, _sectors_to_findings(sectors) + input_findings)
 
     total_delta = float(trace["delta"].iloc[-1])
     log.info("Delta vs PB: %+.3f s  (worst sector: %.3f s)",

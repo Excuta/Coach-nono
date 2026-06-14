@@ -37,6 +37,10 @@ class _Config:
     def archive_dir(self) -> Path:
         return self.data_dir / "archive"
 
+    @property
+    def thresholds_config(self) -> Path:
+        return self.data_dir / "config" / "thresholds.json"
+
     # Coach persona
     coach_name: str = os.getenv("COACH_NAME", "Coach Nono")
     # System prompt preamble injected into every LLM call. Override via env to experiment.
