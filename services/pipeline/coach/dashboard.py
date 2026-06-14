@@ -193,7 +193,7 @@ else:
         return ""
 
     st.dataframe(
-        df_sectors.style.applymap(_color_loss, subset=["Time loss (s)"]),
+        df_sectors.style.map(_color_loss, subset=["Time loss (s)"]),
         use_container_width=True,
         hide_index=True,
     )
