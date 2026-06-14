@@ -285,11 +285,11 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [x] Verify resumability: kill `process` mid-run, restart, work completes
 
 ### Phase D — Tier 2: input coaching (+ 1.5 setups I/O)
-- [ ] `inputs.py` detectors: trail-brake overlap, coasting gap, lockups/ABS, corner overspeed,
+- [x] `inputs.py` detectors: trail-brake overlap, coasting gap, lockups/ABS, corner overspeed,
       steering reversals, throttle smoothness, short-shift — each emits a finding w/ severity + fix
-- [ ] Config-driven thresholds (per car/track), documented defaults
-- [ ] `setups.py`: parse + write ACC setup JSON; diff two setups
-- [ ] Dashboard: per-corner coaching notes
+- [x] Config-driven thresholds (per car/track), documented defaults
+- [x] `setups.py`: parse + write ACC setup JSON; diff two setups
+- [x] Dashboard: per-corner coaching notes
 - [ ] Tune thresholds against ~20–40 real laps
 
 ### Phase E — Tier 2.5 + Tier 3: setup advisor + LLM coach

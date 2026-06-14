@@ -61,3 +61,19 @@
 **What's next:** Phase D — Tier 2 input coaching (`inputs.py`)
 
 **Blockers:** None
+
+---
+
+## 2026-06-14 — Phase D: Tier 2 input coaching
+
+**What changed:**
+- `inputs.py`: 7 detectors (trail-brake overlap, coasting, lockup/ABS, steering reversal, throttle spike, short-shift, corner overspeed); each emits a finding with severity + fix text
+- `config.py`: `thresholds_config` property → `data/config/thresholds.json`
+- `process.py`: integrated `inputs.detect()` into the worker; unified `_insert_findings` accepts any finding kind; input findings run on all valid laps including PB-registration laps
+- `setups.py`: `load_setup` / `save_setup` (atomic) / `diff_setups` (dot-notation diff) for ACC JSON setup files
+- `dashboard.py`: "Coaching notes" section showing input findings ranked by severity with fix text
+- `thresholds.example.json`: documented defaults with per-combo override format; copy to `data/config/thresholds.json` to activate
+
+**What's next:** Tune thresholds against real laps (~20–40 laps on one combo)
+
+**Blockers:** None — threshold tuning requires real driving data
