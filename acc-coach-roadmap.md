@@ -1,4 +1,4 @@
-# ACC AI Coach — Build Roadmap (Claude Code)
+# Coach Nono — Build Roadmap (Claude Code)
 
 **Audience:** Claude Code (implementer) + Yahia (driver/operator).
 **Hardware:** Windows sim PC, RTX 5060 (8 GB), Docker Desktop + WSL2, 32 GB RAM.
@@ -297,8 +297,15 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [ ] `coach-llm` (Ollama) up under gpu profile; pull a 7–8B Q4 model; confirm it fits 8 GB
 - [ ] `sessions.py`: store history, track PB progression, generate practice-drill plans
 - [ ] `coach_service.py`: feed **computed** findings + history to the LLM (it narrates, never invents
-      numbers); output coaching + next-session plan
+      numbers); output coaching + next-session plan using the **Coach Nono** persona (female voice,
+      direct + encouraging tone — defined in `config.py:coach_persona`)
 - [ ] Dashboard "Coach" tab (chat + session plan); verify GPU can be brought up/down cleanly
+- [ ] **Voice output (optional — Nono's real voice):** Yahia is building a Crew Chief voice pack
+      from Nono's recordings. Reuse those WAV samples to synthesize coaching output in her actual
+      voice via **XTTS v2** (Coqui) zero-shot cloning — provide a reference clip, it runs on the
+      RTX 5060 but shares VRAM with the LLM, so bring coach-llm down first or quantise further.
+      Alt: **RVC** (voice conversion) on top of any TTS output, lighter on VRAM.
+      Config hook: `COACH_TTS=xtts` + `TTS_VOICE_REF=/data/reference/nono_voice.wav`.
 
 ### Phase F — Hardening
 - [ ] Stale-lease reclaim on worker startup

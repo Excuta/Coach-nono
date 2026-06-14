@@ -1,4 +1,4 @@
--- ACC Coach schema — runs automatically on first db container boot.
+-- Coach Nono schema — runs automatically on first db container boot.
 -- Safe to re-run: all objects use IF NOT EXISTS.
 
 CREATE TABLE IF NOT EXISTS sessions (
