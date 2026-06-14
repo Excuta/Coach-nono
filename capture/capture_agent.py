@@ -172,6 +172,40 @@ def run() -> None:
                 lap_valid = True
                 log.info("Session started: %s  (car=%s  track=%s)", session_id, car, track)
 
+            else:
+                # ---- Detect context change while live (car/track/session-type switched) ----
+                # ACC can transition to a new session without briefly dropping out of
+                # ACC_LIVE, so we cannot rely on the status check alone.
+                sc_now = source.context(raw)
+                new_car = sc_now.car or ""
+                new_track = sc_now.track or ""
+                if (
+                    (new_car and new_car != ctx["car"])
+                    or (new_track and new_track != ctx["track"])
+                    or (sc_now.session_type and sc_now.session_type != ctx["session_type"])
+                ):
+                    log.info(
+                        "Session context changed %s/%s → %s/%s — starting new session",
+                        ctx["car"], ctx["track"],
+                        new_car or "?", new_track or "?",
+                    )
+                    session_id = None
+                    lap_buf = []
+                    prev_completed = 0
+                    continue
+
+            # ---- Detect lap-counter regression (session restart, same context) ----
+            completed = g.completed_lap
+            if completed < prev_completed:
+                log.info(
+                    "Lap counter regressed %d→%d — starting new session",
+                    prev_completed, completed,
+                )
+                session_id = None
+                lap_buf = []
+                prev_completed = 0
+                continue
+
             # ---- Accumulate sample ----
             t = time.monotonic() - t0
             lap_buf.append(source.to_sample(raw, t))
@@ -182,7 +216,6 @@ def run() -> None:
                 lap_valid = False
 
             # ---- Lap boundary ----
-            completed = g.completed_lap
             if completed > prev_completed:
                 lap_time_ms = g.last_time
                 _write_lap(lap_buf, session_id, prev_completed, lap_time_ms, lap_valid, ctx)
