@@ -236,6 +236,7 @@ else:
         detail = f.get("detail") or {}
         rows.append({
             "Sector": f["corner"],
+            "Position": round(detail.get("spline") or detail.get("spline_start") or 0.0, 3),
             "Finding": _KIND_LABEL.get(f["kind"], f["kind"]),
             "Severity": round(f["severity"], 2),
             "Fix": detail.get("fix", ""),
@@ -245,3 +246,72 @@ else:
         use_container_width=True,
         hide_index=True,
     )
+
+# ---------------------------------------------------------------------------
+# Track timeline: coaching notes mapped to lap position
+# ---------------------------------------------------------------------------
+
+st.subheader("Track timeline")
+
+if not input_findings:
+    st.caption("No findings to map.")
+else:
+    _KIND_COLOR = {
+        "Trail-brake overlap":   "#f4a261",
+        "Coasting":              "#a8dadc",
+        "Lockup / ABS":          "#e63946",
+        "Steering instability":  "#8338ec",
+        "Throttle spike":        "#ffb703",
+        "Short shift":           "#06d6a0",
+        "Corner overspeed":      "#ef233c",
+    }
+
+    # Group findings by kind for one scatter trace each
+    from collections import defaultdict
+    by_kind: dict[str, list] = defaultdict(list)
+    for f in input_findings:
+        detail = f.get("detail") or {}
+        spline_pos = detail.get("spline") or detail.get("spline_start")
+        if spline_pos is None:
+            continue
+        label = _KIND_LABEL.get(f["kind"], f["kind"])
+        by_kind[label].append({
+            "x": float(spline_pos),
+            "size": max(10, float(f["severity"]) * 22),
+            "text": detail.get("fix", ""),
+            "severity": round(float(f["severity"]), 2),
+        })
+
+    fig_tl = go.Figure()
+    for kind_label, pts in sorted(by_kind.items()):
+        color = _KIND_COLOR.get(kind_label, "#aaaaaa")
+        fig_tl.add_trace(go.Scatter(
+            x=[p["x"] for p in pts],
+            y=[kind_label] * len(pts),
+            mode="markers",
+            name=kind_label,
+            marker=dict(
+                size=[p["size"] for p in pts],
+                color=color,
+                opacity=0.85,
+                line=dict(width=1, color="#ffffff33"),
+            ),
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "Position: %{x:.3f}<br>"
+                "Severity: %{customdata}<br>"
+                "%{text}<extra></extra>"
+            ),
+            text=[p["text"] for p in pts],
+            customdata=[p["severity"] for p in pts],
+        ))
+
+    fig_tl.update_layout(
+        xaxis=dict(title="Track position (spline 0→1)", range=[0, 1]),
+        yaxis=dict(title=""),
+        height=max(180, len(by_kind) * 52 + 60),
+        showlegend=False,
+        margin=dict(l=170, r=20, t=10, b=40),
+        template="plotly_dark",
+    )
+    st.plotly_chart(fig_tl, use_container_width=True)
