@@ -267,12 +267,12 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [x] `db/init/01_schema.sql` applied on first boot; `docker compose up db` healthy
 
 ### Phase B — Tier 0: capture + ingest
-- [ ] `schema.py` canonical dataclasses
-- [ ] `sources/base.py` interface + `sources/acc.py` ACC mapping (pyaccsharedmemory)
-- [ ] `capture/capture_agent.py`: poll shared memory, detect lap boundaries (spline wrap /
+- [x] `schema.py` canonical dataclasses
+- [x] `sources/base.py` interface + `sources/acc.py` ACC mapping (pyaccsharedmemory)
+- [x] `capture/capture_agent.py`: poll shared memory, detect lap boundaries (spline wrap /
       completedLaps), buffer per lap, **atomic** write `raw/<session>/<lap>.parquet` + `.meta.json`
-- [ ] `run_capture.ps1` host launcher; verify a real lap produces a parquet
-- [ ] `ingest.py`: watch `raw/`, validate, create `sessions`/`laps` rows (status=pending),
+- [x] `run_capture.ps1` host launcher; verify a real lap produces a parquet
+- [x] `ingest.py`: watch `raw/`, validate, create `sessions`/`laps` rows (status=pending),
       move file `raw/ → laps/`
 - [ ] End-to-end smoke test: drive 1 lap → row appears with status=pending
 

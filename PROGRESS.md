@@ -14,3 +14,21 @@
 **What's next:** Phase B — Tier 0 capture + ingest (schema.py, sources/base.py + acc.py, capture_agent.py, ingest.py)
 
 **Blockers:** None
+
+---
+
+## 2026-06-14 — Phase B implementation (pending smoke test)
+
+**What changed:**
+- `coach/schema.py`: `CanonicalSample` + `SessionContext` dataclasses
+- `coach/sources/base.py`: `TelemetrySource` Protocol
+- `coach/sources/acc.py`: `ACCSource` — reads pyaccsharedmemory, maps to canonical schema; exposes `read_shared_memory()` + `to_sample()` for capture agent
+- `db/init/01_schema.sql`: added `capture_id TEXT UNIQUE` to sessions table
+- `coach/db.py`: `get_or_create_session`, `lap_id()`, `insert_lap()` helpers
+- `capture/capture_agent.py`: 50 Hz poll loop, lap-boundary via `completedLaps`, atomic parquet + meta.json write
+- `capture/requirements.txt` + `capture/run_capture.ps1`: host-side launcher with first-run venv setup
+- `coach/ingest.py`: 2 s polling loop over raw/, validates parquet, registers sessions/laps in DB (status=pending), moves files to laps/
+
+**What's next:** Smoke test (Yahia drives 1 lap) then Phase C (align, delta, process worker, dashboard)
+
+**Blockers:** Smoke test needs real ACC session
