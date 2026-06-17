@@ -6,6 +6,9 @@ and writes one parquet + meta.json per completed lap to data/raw/<session_id>/.
 Files are written atomically (*.tmp then os.replace) so the ingest worker
 never sees a half-written lap.
 
+If CAPTURE_COORDS=true, also writes per-lap car XYZ coordinate traces to
+data/coords/<session_id>/ for future track-geometry fitting.
+
 Usage:
     python capture_agent.py          # or via run_capture.ps1
 """
@@ -39,6 +42,7 @@ log = logging.getLogger("capture")
 _ROOT = Path(__file__).parent.parent
 DATA_DIR = _ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
+COORDS_DIR = DATA_DIR / "coords"
 
 # ---------------------------------------------------------------------------
 # Tunables
@@ -47,6 +51,7 @@ POLL_HZ = 50                  # target sample rate
 POLL_INTERVAL = 1.0 / POLL_HZ
 MIN_SAMPLES = 500             # ~10 s at 50 Hz; silently discard shorter laps
 _ACC_LIVE = 2                 # ACC_STATUS.ACC_LIVE
+CAPTURE_COORDS = os.getenv("CAPTURE_COORDS", "").lower() in ("1", "true", "yes")
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +69,7 @@ def _write_lap(
     lap_time_ms: int,
     valid: bool,
     ctx: dict,
+    coords: list | None = None,
 ) -> None:
     if len(buf) < MIN_SAMPLES:
         log.warning("Lap %d: %d samples (< %d), discarding", lap_index, len(buf), MIN_SAMPLES)
@@ -82,6 +88,17 @@ def _write_lap(
     df.to_parquet(tmp_p, index=False)
     os.replace(tmp_p, parquet_dst)
 
+    # --- Optional coords parquet write ---
+    coords_file: str | None = None
+    if coords:
+        c_dir = COORDS_DIR / session_id
+        c_dir.mkdir(parents=True, exist_ok=True)
+        c_parquet = c_dir / f"{stem}.parquet"
+        tmp_c = c_parquet.with_suffix(".parquet.tmp")
+        pd.DataFrame(coords).to_parquet(tmp_c, index=False)
+        os.replace(tmp_c, c_parquet)
+        coords_file = f"{stem}.parquet"
+
     # --- Atomic meta write (always after parquet so ingest never sees meta without parquet) ---
     meta = {
         **ctx,
@@ -91,6 +108,7 @@ def _write_lap(
         "valid": valid,
         "sample_count": len(buf),
         "parquet_file": f"{stem}.parquet",
+        "coords_file": coords_file,
     }
     tmp_m = meta_dst.with_suffix(".json.tmp")
     tmp_m.write_text(json.dumps(meta, indent=2))
@@ -99,11 +117,12 @@ def _write_lap(
     lap_s = lap_time_ms / 1000.0
     m, s = divmod(lap_s, 60)
     log.info(
-        "Lap %d  %d:%06.3f  %s  %d samples  →  %s",
+        "Lap %d  %d:%06.3f  %s  %d samples  →  %s%s",
         lap_index, int(m), s,
         "VALID" if valid else "INVALID",
         len(buf),
         parquet_dst.relative_to(_ROOT),
+        f"  +coords({len(coords)})" if coords_file else "",
     )
 
 
@@ -114,12 +133,13 @@ def _write_lap(
 def run() -> None:
     source = ACCSource()
     source.open()
-    log.info("Capture agent started. Waiting for ACC to go live…")
+    log.info("Capture agent started. Waiting for ACC to go live… (CAPTURE_COORDS=%s)", CAPTURE_COORDS)
 
     session_id: str | None = None
     ctx: dict = {}
     t0: float = 0.0          # monotonic time at session start
     lap_buf: list = []
+    coords_buf: list = []
     prev_completed: int = 0
     lap_valid: bool = True    # tracks whether current lap is still valid
 
@@ -135,6 +155,7 @@ def run() -> None:
                     log.warning("Lost connection to ACC.")
                     session_id = None
                     lap_buf = []
+                    coords_buf = []
                 time.sleep(1.0)
                 continue
 
@@ -150,6 +171,7 @@ def run() -> None:
                     log.info("Left track (status=%d). Session %s paused.", status, session_id)
                     session_id = None
                     lap_buf = []
+                    coords_buf = []
                 time.sleep(POLL_INTERVAL)
                 continue
 
@@ -166,6 +188,7 @@ def run() -> None:
                     "track": track,
                     "session_type": sc.session_type,
                     "conditions": sc.conditions,
+                    "statics": sc.statics,
                 }
                 t0 = time.monotonic()
                 prev_completed = g.completed_lap
@@ -191,6 +214,7 @@ def run() -> None:
                     )
                     session_id = None
                     lap_buf = []
+                    coords_buf = []
                     prev_completed = 0
                     continue
 
@@ -203,12 +227,15 @@ def run() -> None:
                 )
                 session_id = None
                 lap_buf = []
+                coords_buf = []
                 prev_completed = 0
                 continue
 
             # ---- Accumulate sample ----
             t = time.monotonic() - t0
             lap_buf.append(source.to_sample(raw, t))
+            if CAPTURE_COORDS:
+                coords_buf.append(source.coords_row(raw, t))
 
             # Track invalidity across the lap — is_valid_lap resets to True on
             # the crossing sample, so we must latch any False seen during the lap.
@@ -218,8 +245,12 @@ def run() -> None:
             # ---- Lap boundary ----
             if completed > prev_completed:
                 lap_time_ms = g.last_time
-                _write_lap(lap_buf, session_id, prev_completed, lap_time_ms, lap_valid, ctx)
+                _write_lap(
+                    lap_buf, session_id, prev_completed, lap_time_ms, lap_valid, ctx,
+                    coords=coords_buf if CAPTURE_COORDS else None,
+                )
                 lap_buf = []
+                coords_buf = []
                 prev_completed = completed
                 lap_valid = True  # reset for incoming lap
 
@@ -237,4 +268,6 @@ def run() -> None:
 
 if __name__ == "__main__":
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    if CAPTURE_COORDS:
+        COORDS_DIR.mkdir(parents=True, exist_ok=True)
     run()
