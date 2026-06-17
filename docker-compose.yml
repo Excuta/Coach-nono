@@ -67,6 +67,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  dashboard-v2:
+    build: ./services/pipeline
+    command: ["streamlit", "run", "coach/dashboard_v2.py",
+              "--server.port", "8502", "--server.address", "0.0.0.0"]
+    environment: *pipeline-env
+    volumes:
+      - ./data:/data
+    ports:
+      - "8502:8502"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ----- GPU services (only started with --profile gpu) -----
   coach-llm:
     image: ollama/ollama:latest
