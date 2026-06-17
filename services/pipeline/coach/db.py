@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 
 import psycopg2
@@ -32,20 +33,36 @@ def get_or_create_session(
     track: str,
     session_type: str,
     conditions: dict,
+    statics: dict | None = None,
 ) -> int:
+    st = statics or {}
     c = conn()
     with c.cursor() as cur:
-        # Upsert: DO UPDATE with no real change so RETURNING always fires
         cur.execute(
             """
-            INSERT INTO sessions (capture_id, game, car, track, session_type, conditions)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (capture_id)
-            DO UPDATE SET capture_id = EXCLUDED.capture_id
+            INSERT INTO sessions
+              (capture_id, game, car, track, session_type, conditions,
+               max_rpm, max_fuel, sector_count, player_name, is_online, statics)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (capture_id) DO UPDATE SET
+                max_rpm      = COALESCE(EXCLUDED.max_rpm,      sessions.max_rpm),
+                max_fuel     = COALESCE(EXCLUDED.max_fuel,     sessions.max_fuel),
+                sector_count = COALESCE(EXCLUDED.sector_count, sessions.sector_count),
+                player_name  = COALESCE(EXCLUDED.player_name,  sessions.player_name),
+                is_online    = COALESCE(EXCLUDED.is_online,    sessions.is_online),
+                statics      = COALESCE(EXCLUDED.statics,      sessions.statics)
             RETURNING id
             """,
-            (capture_id, game, car, track, session_type,
-             psycopg2.extras.Json(conditions)),
+            (
+                capture_id, game, car, track, session_type,
+                psycopg2.extras.Json(conditions),
+                st.get("max_rpm") or None,
+                st.get("max_fuel") or None,
+                st.get("sector_count") or None,
+                st.get("player_name") or None,
+                st.get("is_online"),
+                psycopg2.extras.Json(st) if st else None,
+            ),
         )
         row = cur.fetchone()
     c.commit()
@@ -84,3 +101,37 @@ def insert_lap(
         )
     c.commit()
     log.debug("Lap %s inserted (session=%d idx=%d)", lid, session_db_id, lap_index)
+
+
+# ---------------------------------------------------------------------------
+# Extras + coordinates helpers
+# ---------------------------------------------------------------------------
+
+def insert_extras(lap_id: str, agg: dict) -> None:
+    if not agg:
+        return
+    c = conn()
+    cols = list(agg.keys())
+    placeholders = ", ".join(["%s"] * len(cols))
+    sql = (
+        f"INSERT INTO extras (lap_id, {', '.join(cols)}) "
+        f"VALUES (%s, {placeholders}) "
+        f"ON CONFLICT (lap_id) DO NOTHING"
+    )
+    with c.cursor() as cur:
+        cur.execute(sql, [lap_id] + list(agg.values()))
+    c.commit()
+
+
+def insert_coords(lap_id: str, coords_path: str, sample_count: int) -> None:
+    c = conn()
+    with c.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO coordinates (lap_id, coords_path, sample_count)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (lap_id) DO NOTHING
+            """,
+            (lap_id, coords_path, sample_count),
+        )
+    c.commit()
