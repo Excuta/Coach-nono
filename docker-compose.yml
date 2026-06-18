@@ -67,6 +67,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  ingest-sweep:
+    build: ./services/pipeline
+    command: ["python", "-m", "coach.sweep_service"]
+    environment: *pipeline-env
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ----- GPU services (only started with --profile gpu) -----
   coach-llm:
     image: ollama/ollama:latest
