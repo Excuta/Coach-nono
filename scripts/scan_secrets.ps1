@@ -38,11 +38,10 @@ if (Test-Path $gitleaks) {
 Tee-Report ""
 
 Tee-Report "--- [2] Supplemental PII scan across full history ---"
+# Customize these patterns for your own repo before first run.
 $piiPatterns = @(
-    @{ Name = 'Windows username (YOUR_USERNAME)';         Pattern = 'YOUR_USERNAME' },
-    @{ Name = 'Personal email (<YOUR_EMAIL>)'; Pattern = 'YOUR_USERNAME5@live\.com' },
-    @{ Name = 'Any C:\Users\<user> path';          Pattern = 'C:\\\\Users\\\\[^\\\\]+' },
-    @{ Name = 'Any email address';                 Pattern = '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' }
+    @{ Name = 'Any C:\Users\<user> Windows path'; Pattern = 'C:\\\\Users\\\\[^\\\\]+' },
+    @{ Name = 'Any email address';                Pattern = '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' }
 )
 foreach ($p in $piiPatterns) {
     Tee-Report ("Pattern: {0}" -f $p.Name)
