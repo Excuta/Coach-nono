@@ -185,3 +185,8 @@ Copy `.env.example` to `.env`. Key variables:
 - **Atomic file writes** — parquet is written to `.parquet.tmp` then `os.replace()`d; meta.json always written last. Ingest will never see a partial lap.
 - **`fuel_used_lap` on outlap (lap_index=0)** is unreliable — fuel reading at session start captures garage-fill state, not lap start. Ignore for lap 0.
 - **DB migrations** require all services stopped first. `ALTER TABLE sessions` will hang indefinitely if any psycopg2 connection is open (idle connections hold locks in autocommit=False mode).
+
+---
+
+## License
+MIT — see [LICENSE](LICENSE).
