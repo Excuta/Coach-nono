@@ -53,15 +53,20 @@ GRIP_LABEL  = {0: "Optimum", 1: "Green", 2: "Warning", 3: "Low"}
 GRIP_COLOR  = {0: "#00C853", 1: "#8BC34A", 2: "#FFB300", 3: "#FF1744"}
 RAIN_LABEL  = {0: "Dry ☀", 1: "Drizzle 🌦", 2: "Light rain 🌧", 3: "Heavy rain ⛈"}
 KIND_LABEL  = {
-    "trail_brake":       "Trail-brake",     "coasting":        "Coasting",
-    "lockup":            "Lockup/ABS",      "steering_reversal":"Steer instability",
-    "throttle_spike":    "Throttle spike",  "short_shift":     "Short shift",
-    "corner_overspeed":  "Corner overspeed",
+    "trail_brake":          "Trail-brake",      "coasting":             "Coasting",
+    "lockup":               "Lockup/ABS",       "steering_reversal":    "Steer instability",
+    "throttle_spike":       "Throttle spike",   "short_shift":          "Short shift",
+    "corner_overspeed":     "Corner overspeed",
+    # corner-baseline statistical findings (Phase E1)
+    "slow_apex":            "Slow apex",        "late_brake":           "Late brake",
+    "delayed_throttle":     "Late throttle",    "steering_instability": "Steer corrections",
 }
 KIND_COLOR  = {
     "trail_brake": "#f4a261", "coasting": "#a8dadc", "lockup": "#e63946",
     "steering_reversal": "#8338ec", "throttle_spike": "#ffb703",
     "short_shift": "#06d6a0", "corner_overspeed": "#ef233c",
+    "slow_apex": "#e63946", "late_brake": "#ff9800", "delayed_throttle": "#ffb703",
+    "steering_instability": "#8338ec",
 }
 
 # ---------------------------------------------------------------------------
@@ -202,6 +207,66 @@ def load_coords(lap_id: str) -> pd.DataFrame | None:
     p = cfg.data_dir / rows[0]["coords_path"]
     return pd.read_parquet(p) if p.exists() else None
 
+
+@st.cache_data
+def load_corners(game: str, track: str) -> list[dict]:
+    return _query(
+        "SELECT id, corner_index, name, spline_start, spline_apex, spline_end "
+        "FROM corners WHERE game=%s AND track=%s ORDER BY corner_index",
+        (game, track),
+    )
+
+
+@st.cache_data
+def load_corner_stats_for_lap(lap_id: str) -> list[dict]:
+    return _query(
+        "SELECT cs.corner_id, cs.entry_speed_kph, cs.apex_speed_kph, cs.exit_speed_kph,"
+        "       cs.brake_point, cs.throttle_point, cs.coast_duration, cs.trail_brake_overlap,"
+        "       cs.max_lat_g, cs.min_slip_ratio, cs.steer_reversals,"
+        "       c.corner_index, c.name, c.spline_start, c.spline_apex, c.spline_end "
+        "FROM corner_stats cs JOIN corners c ON c.id = cs.corner_id "
+        "WHERE cs.lap_id=%s ORDER BY c.corner_index",
+        (lap_id,),
+    )
+
+
+@st.cache_data
+def load_corner_baselines(game: str, game_version_major: str, track: str, car: str) -> dict:
+    """Returns {corner_id: {metric: {p10,p25,p50,p75,p90,stddev,sample_count}}}."""
+    rows = _query(
+        "SELECT corner_id, metric, p10, p25, p50, p75, p90, stddev, sample_count "
+        "FROM corner_baselines WHERE game=%s AND game_version_major=%s AND track=%s AND car=%s",
+        (game, game_version_major, track, car),
+    )
+    out: dict = {}
+    for r in rows:
+        cid = r["corner_id"]
+        if cid not in out:
+            out[cid] = {}
+        out[cid][r["metric"]] = {k: r[k] for k in ("p10", "p25", "p50", "p75", "p90", "stddev", "sample_count")}
+    return out
+
+
+@st.cache_data
+def load_all_corner_stats(game: str, game_version_major: str, track: str, car: str) -> pd.DataFrame:
+    """All corner_stats for a track/car/version, with lap metadata for trend charts."""
+    rows = _query(
+        "SELECT l.id AS lap_id, l.lap_index, l.lap_time, l.created_at,"
+        "       cs.corner_id, cs.entry_speed_kph, cs.apex_speed_kph, cs.exit_speed_kph,"
+        "       cs.brake_point, cs.throttle_point, cs.coast_duration, cs.trail_brake_overlap,"
+        "       cs.max_lat_g, cs.min_slip_ratio, cs.steer_reversals,"
+        "       c.corner_index, c.name AS corner_name "
+        "FROM corner_stats cs "
+        "JOIN laps l ON l.id = cs.lap_id "
+        "JOIN sessions s ON s.id = l.session_id "
+        "JOIN corners c ON c.id = cs.corner_id "
+        "WHERE s.game=%s AND cs.game_version_major=%s AND s.track=%s AND s.car=%s "
+        "  AND l.valid=true AND l.status='done' "
+        "ORDER BY l.created_at, c.corner_index",
+        (game, game_version_major, track, car),
+    )
+    return pd.DataFrame(rows)
+
 # ---------------------------------------------------------------------------
 # Plot helpers
 # ---------------------------------------------------------------------------
@@ -239,8 +304,12 @@ st.markdown("<style>[data-testid='stSidebar']{background:#0a0d12}</style>",
 
 with st.sidebar:
     st.title("🏎 Coach Nono v2")
-    page = st.radio("View", ["① Lap Telemetry", "② Track Map", "③ Session & Health"],
-                    label_visibility="collapsed")
+    page = st.radio(
+        "View",
+        ["① Lap Telemetry", "② Track Map", "③ Session & Health",
+         "④ Corner Analysis", "⑤ Lap Trends"],
+        label_visibility="collapsed",
+    )
     st.divider()
 
     sessions = _query(
@@ -702,6 +771,8 @@ def _page_telemetry():
 # ---------------------------------------------------------------------------
 
 def _page_map():
+    _game = sel_sess.get("game", "acc")
+    _corners_map = load_corners(_game, sel_sess["track"])
     col_map, col_ctrl = st.columns([3, 1])
 
     channel_opts = ["speed (km/h)", "throttle", "brake", "g_lat", "g_lon", "delta"]
@@ -768,6 +839,16 @@ def _page_map():
                     fig_map.add_annotation(x=float(cx[ii]), y=float(cz[ii]),
                                            text=str(sec), showarrow=False,
                                            font=dict(size=9, color="#aaa"))
+                # Corner labels
+                for corner in _corners_map:
+                    ii = np.argmin(np.abs(sp_arr - corner["spline_apex"]))
+                    fig_map.add_annotation(
+                        x=float(cx[ii]), y=float(cz[ii]),
+                        text=f"<b>{corner['name']}</b>", showarrow=True,
+                        arrowhead=1, arrowsize=0.6, arrowcolor="#FF9800",
+                        ax=18, ay=-18,
+                        font=dict(size=10, color="#FF9800"),
+                    )
             fig_map.update_layout(
                 template="plotly_dark", paper_bgcolor=C["bg"], plot_bgcolor=C["panel"],
                 height=620, margin=dict(l=10, r=10, t=30, b=10),
@@ -797,6 +878,13 @@ def _page_map():
                 name=channel,
             ))
             _sector_lines(fig_map)
+            # Corner labels on ribbon
+            for corner in _corners_map:
+                fig_map.add_vline(x=corner["spline_apex"], line_color="#FF9800",
+                                  line_width=0.8, line_dash="dot")
+                fig_map.add_annotation(x=corner["spline_apex"], y=1, yref="paper",
+                                       text=f"<b>{corner['name']}</b>", showarrow=False,
+                                       font=dict(size=9, color="#FF9800"), yshift=10)
             fig_map.update_layout(
                 template="plotly_dark", paper_bgcolor=C["bg"], plot_bgcolor=C["panel"],
                 height=400, margin=dict(l=60, r=20, t=30, b=40),
@@ -1118,6 +1206,285 @@ def _page_health():
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------------------------
+# PAGE 4 — Corner Analysis
+# ---------------------------------------------------------------------------
+
+def _corner_chip(kind: str, severity: float) -> str:
+    color = KIND_COLOR.get(kind, "#555")
+    label = KIND_LABEL.get(kind, kind)
+    return (f"<span style='background:{color};padding:2px 7px;border-radius:3px;"
+            f"font-size:11px;color:#fff'>{label} {severity:.2f}</span>")
+
+
+def _page_corner_analysis():
+    game  = sel_sess.get("game", "acc")
+    track = sel_sess["track"]
+    car   = sel_sess["car"]
+
+    corners       = load_corners(game, track)
+    corner_stats  = load_corner_stats_for_lap(sel_lap_id)
+    baselines     = load_corner_baselines(game, cfg.game_version_major, track, car)
+
+    if not corners:
+        st.info("Corner map not detected yet — need 3+ processed laps on this track.")
+        return
+
+    # ── Multi-lap speed overlay ──────────────────────────────────────────────
+    st.subheader("Lap comparison")
+    compare_ids = st.multiselect(
+        "Overlay laps (up to 4)",
+        [l["id"] for l in done_laps],
+        default=[sel_lap_id],
+        format_func=lambda lid: _lap_lbl(next(l for l in done_laps if l["id"] == lid)),
+        max_selections=4,
+    )
+    if compare_ids:
+        fig_ov = go.Figure()
+        for lid in compare_ids:
+            lap_row = next((l for l in done_laps if l["id"] == lid), None)
+            if not lap_row:
+                continue
+            df_ov = align_extended(lap_row["lap_path"])
+            if df_ov is None or "speed" not in df_ov.columns:
+                continue
+            is_sel = lid == sel_lap_id
+            fig_ov.add_trace(go.Scatter(
+                x=df_ov["spline"], y=df_ov["speed"] * 3.6,
+                name=_lap_lbl(lap_row),
+                line=dict(width=2.5 if is_sel else 1.2),
+            ))
+        for c in corners:
+            fig_ov.add_vline(x=c["spline_apex"], line_color="#37474F",
+                             line_width=0.8, line_dash="dot")
+            fig_ov.add_annotation(x=c["spline_apex"], y=1, yref="paper",
+                                  text=f"<b>{c['name']}</b>", showarrow=False,
+                                  font=dict(size=9, color="#FF9800"), yshift=8)
+        _base_layout(fig_ov, height=220)
+        fig_ov.update_yaxes(title_text="Speed km/h")
+        fig_ov.update_xaxes(title_text="Track position (spline 0→1)")
+        _sector_lines(fig_ov)
+        st.plotly_chart(fig_ov, use_container_width=True, config={"scrollZoom": True})
+
+    st.divider()
+    st.subheader("Corner breakdown")
+
+    if not corner_stats:
+        st.caption("No corner stats for this lap — it may have been processed before Phase E1.")
+        return
+
+    stats_by_idx   = {r["corner_index"]: r for r in corner_stats}
+    # corner_baseline findings keyed by corner_index
+    cbf_by_corner: dict[int, list] = {}
+    for f in findings:
+        d = f.get("detail") or {}
+        if d.get("source") == "corner_baseline":
+            ci = f["corner"]
+            if ci not in cbf_by_corner:
+                cbf_by_corner[ci] = []
+            cbf_by_corner[ci].append(f)
+
+    for corner in corners:
+        idx   = corner["corner_index"]
+        name  = corner["name"]
+        cid   = corner["id"]
+        stats = stats_by_idx.get(idx)
+        bl    = baselines.get(cid, {})
+        cfs   = cbf_by_corner.get(idx, [])
+
+        header = f"**{name}**"
+        if cfs:
+            header += f" — {len(cfs)} finding(s)"
+        with st.expander(header, expanded=bool(cfs)):
+            if not stats:
+                st.caption("No stats available for this corner on this lap.")
+                continue
+
+            # Metric strip
+            cols = st.columns(5)
+            apex   = stats.get("apex_speed_kph")
+            entry  = stats.get("entry_speed_kph")
+            exit_  = stats.get("exit_speed_kph")
+            bl_apex = bl.get("apex_speed_kph", {})
+            p50_apex = bl_apex.get("p50")
+            p25_apex = bl_apex.get("p25")
+
+            cols[0].metric("Entry", f"{entry:.0f} km/h" if entry else "—")
+            if apex is not None and p50_apex is not None:
+                d_apex = apex - p50_apex
+                cols[1].metric("Apex", f"{apex:.0f} km/h", f"{d_apex:+.1f} vs P50",
+                                delta_color="normal")
+            else:
+                cols[1].metric("Apex", f"{apex:.0f} km/h" if apex else "—",
+                                "learning…" if apex else None)
+            cols[2].metric("Exit", f"{exit_:.0f} km/h" if exit_ else "—")
+
+            br_pt    = stats.get("brake_point")
+            br_p50   = bl.get("brake_point", {}).get("p50")
+            th_pt    = stats.get("throttle_point")
+            th_p50   = bl.get("throttle_point", {}).get("p50")
+            if br_pt is not None and br_p50 is not None:
+                cols[3].metric("Brake pt", f"{br_pt:.3f}", f"{br_pt - br_p50:+.3f}")
+            else:
+                cols[3].metric("Brake pt", f"{br_pt:.3f}" if br_pt else "—")
+            if th_pt is not None and th_p50 is not None:
+                cols[4].metric("Throttle pt", f"{th_pt:.3f}", f"{th_pt - th_p50:+.3f}")
+            else:
+                cols[4].metric("Throttle pt", f"{th_pt:.3f}" if th_pt else "—")
+
+            # Findings chips + fix text
+            if cfs:
+                chips = " ".join(_corner_chip(f["kind"], f["severity"])
+                                 for f in sorted(cfs, key=lambda x: -x["severity"]))
+                st.markdown(chips, unsafe_allow_html=True)
+                for f in sorted(cfs, key=lambda x: -x["severity"]):
+                    fix = (f.get("detail") or {}).get("fix", "")
+                    if fix:
+                        st.caption(f"→ {fix}")
+
+            # Mini telemetry plot for this corner window
+            if gx is not None:
+                sp     = gx["spline"].values
+                c_mask = (sp >= corner["spline_start"]) & (sp <= corner["spline_end"])
+                if c_mask.sum() > 5:
+                    seg = gx[c_mask]
+                    fig_c = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                          vertical_spacing=0.04, row_heights=[0.55, 0.45])
+                    fig_c.add_trace(go.Scatter(
+                        x=seg["spline"], y=seg["speed"] * 3.6,
+                        name="Speed", line=dict(color=C["speed"], width=2),
+                    ), row=1, col=1)
+                    if p50_apex is not None:
+                        fig_c.add_hline(y=p50_apex, line_dash="dash",
+                                        line_color="rgba(255,255,255,0.25)",
+                                        annotation_text=f"P50 apex {p50_apex:.0f}",
+                                        annotation_font_size=9, row=1, col=1)
+                    fig_c.add_trace(go.Scatter(
+                        x=seg["spline"], y=seg["throttle"] * 100,
+                        name="Throttle %", line=dict(color=C["throttle"], width=1.5),
+                    ), row=2, col=1)
+                    fig_c.add_trace(go.Scatter(
+                        x=seg["spline"], y=seg["brake"] * 100,
+                        name="Brake %", line=dict(color=C["brake"], width=1.5),
+                    ), row=2, col=1)
+                    if br_pt is not None:
+                        fig_c.add_vline(x=br_pt, line_color=C["brake"], line_width=1.2,
+                                        line_dash="dash",
+                                        annotation_text="Brake", annotation_font_size=9)
+                    if th_pt is not None:
+                        fig_c.add_vline(x=th_pt, line_color=C["throttle"], line_width=1.2,
+                                        line_dash="dash",
+                                        annotation_text="Throttle", annotation_font_size=9)
+                    fig_c.update_layout(
+                        template="plotly_dark", paper_bgcolor=C["bg"], plot_bgcolor=C["panel"],
+                        height=240, margin=dict(l=50, r=10, t=8, b=20), showlegend=True,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.0, font_size=10),
+                    )
+                    fig_c.update_yaxes(title_text="km/h", row=1, col=1)
+                    fig_c.update_yaxes(title_text="%", row=2, col=1)
+                    st.plotly_chart(fig_c, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# PAGE 5 — Lap Trends
+# ---------------------------------------------------------------------------
+
+_TREND_METRICS = [
+    ("apex_speed_kph",      "Apex speed (km/h)"),
+    ("entry_speed_kph",     "Entry speed (km/h)"),
+    ("exit_speed_kph",      "Exit speed (km/h)"),
+    ("brake_point",         "Brake point (spline)"),
+    ("throttle_point",      "Throttle point (spline)"),
+    ("coast_duration",      "Coast duration (samples)"),
+    ("trail_brake_overlap", "Trail-brake overlap (samples)"),
+    ("max_lat_g",           "Max lateral G"),
+    ("steer_reversals",     "Steer reversals"),
+]
+_TREND_METRIC_LABEL = {k: v for k, v in _TREND_METRICS}
+
+
+def _page_trends():
+    game  = sel_sess.get("game", "acc")
+    track = sel_sess["track"]
+    car   = sel_sess["car"]
+
+    corners = load_corners(game, track)
+    if not corners:
+        st.info("Corner map not detected yet — need 3+ processed laps on this track.")
+        return
+
+    all_stats = load_all_corner_stats(game, cfg.game_version_major, track, car)
+    if all_stats.empty:
+        st.info("No corner stats accumulated yet — process more laps to build trends.")
+        return
+
+    corner_opts = {c["corner_index"]: c["name"] for c in corners}
+    c1, c2 = st.columns(2)
+    sel_cidx = c1.selectbox("Corner", list(corner_opts),
+                             format_func=corner_opts.__getitem__)
+    metric   = c2.selectbox("Metric", [m[0] for m in _TREND_METRICS],
+                             format_func=_TREND_METRIC_LABEL.__getitem__)
+
+    cdata = all_stats[all_stats["corner_index"] == sel_cidx].copy()
+    if cdata.empty or metric not in cdata.columns:
+        st.info("No data yet for this corner.")
+        return
+    cdata = cdata.sort_values("created_at").dropna(subset=[metric]).reset_index(drop=True)
+    cdata["seq"] = range(1, len(cdata) + 1)
+
+    baselines  = load_corner_baselines(game, cfg.game_version_major, track, car)
+    cid        = next((c["id"] for c in corners if c["corner_index"] == sel_cidx), None)
+    bl         = (baselines.get(cid) or {}).get(metric, {})
+    p25, p50, p75 = bl.get("p25"), bl.get("p50"), bl.get("p75")
+    stddev     = bl.get("stddev", 0)
+    n_laps     = bl.get("sample_count", 0)
+
+    fig_t = go.Figure()
+
+    if p25 is not None and p75 is not None:
+        fig_t.add_hrect(y0=p25, y1=p75,
+                        fillcolor="rgba(255,255,255,0.05)", line_width=0,
+                        annotation_text="P25–P75", annotation_font_size=9,
+                        annotation_font_color="#888")
+    if p50 is not None:
+        fig_t.add_hline(y=p50, line_dash="dash", line_color="rgba(255,255,255,0.25)",
+                        annotation_text=f"P50 {p50:.2f}", annotation_font_size=9)
+
+    fig_t.add_trace(go.Scatter(
+        x=cdata["seq"], y=cdata[metric],
+        mode="lines+markers",
+        marker=dict(size=7, color=C["speed"]),
+        line=dict(color=C["speed"], width=1.5),
+        name=_TREND_METRIC_LABEL[metric],
+        customdata=cdata[["lap_id", "lap_time"]].values,
+        hovertemplate="Lap %{x} · value %{y:.3f}<extra></extra>",
+    ))
+
+    # Highlight selected lap
+    sel_row = cdata[cdata["lap_id"] == sel_lap_id]
+    if not sel_row.empty:
+        fig_t.add_trace(go.Scatter(
+            x=sel_row["seq"], y=sel_row[metric],
+            mode="markers", marker=dict(size=13, color="#FF1744", symbol="star"),
+            name="Selected lap",
+        ))
+
+    metric_label = _TREND_METRIC_LABEL[metric]
+    corner_name  = corner_opts.get(sel_cidx, f"T{sel_cidx}")
+    _base_layout(fig_t, height=360)
+    fig_t.update_xaxes(title_text="Lap (chronological)")
+    fig_t.update_yaxes(title_text=metric_label)
+    fig_t.update_layout(title=f"{corner_name} — {metric_label}")
+    st.plotly_chart(fig_t, use_container_width=True)
+
+    if bl:
+        st.caption(
+            f"Baseline from {n_laps} laps  ·  "
+            f"P50: {p50:.3f}  ·  stddev: {stddev:.3f}  ·  "
+            f"P25–P75: {p25:.3f}–{p75:.3f}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -1125,5 +1492,9 @@ if page == "① Lap Telemetry":
     _page_telemetry()
 elif page == "② Track Map":
     _page_map()
-else:
+elif page == "③ Session & Health":
     _page_health()
+elif page == "④ Corner Analysis":
+    _page_corner_analysis()
+else:
+    _page_trends()

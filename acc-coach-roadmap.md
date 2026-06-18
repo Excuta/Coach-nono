@@ -308,11 +308,13 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
       → 6 corners detected on Paul_Ricard; 30 corner_stats rows; baselines live at sample_count=5
 
 ### Phase E2 — Dashboard Revamp
-- [ ] New page **① Corner Analysis**: corner table (entry/apex/exit speed, findings chips);
-      click-to-expand detail panel (speed+pedal overlay vs P50 ghost); multi-lap speed overlay
-- [ ] New page **④ Lap Trends**: per-corner metric over lap sequence with P50 band
-- [ ] Enhance **③ Track Map**: corner labels (T1…Tn) overlaid at apex spline positions
-- [ ] Coaching card in Session & Health: per-corner findings ranked by severity
+- [x] New page **④ Corner Analysis**: multi-lap speed overlay with corner markers; per-corner
+      expanders with entry/apex/exit speed (P50 delta), brake+throttle point, findings chips,
+      fix text, and mini speed+pedal plot for the corner window
+- [x] New page **⑤ Lap Trends**: corner + metric selectors; P25–P75 band + P50 line; metric
+      over time scatter with selected lap highlighted; baseline summary caption
+- [x] Enhance **② Track Map**: corner labels (T1…Tn) on both GPS and ribbon modes
+- [ ] Coaching card in Session & Health: per-corner findings ranked by severity (E3)
 
 ### Phase E3 — Coaching Text (rule-based, zero GPU)
 - [ ] `analysis/coach_text.py`: template-based coaching messages from statistical findings
