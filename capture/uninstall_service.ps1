@@ -3,21 +3,24 @@
 # Does NOT delete logs or data.
 
 $ErrorActionPreference = "Stop"
-$TaskName = "CoachNono-Capture"
+$TaskName     = "CoachNono-Capture"
+$WatchdogTask = "CoachNono-Watchdog"
 
-$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-if (-not $task) {
-    Write-Host "$TaskName task is not registered -- nothing to do."
-} else {
-    if ($task.State -eq "Running") {
-        Write-Host "Stopping $TaskName..."
-        Stop-ScheduledTask -TaskName $TaskName
-        Start-Sleep -Seconds 2
+foreach ($t in @($TaskName, $WatchdogTask)) {
+    $task = Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
+    if (-not $task) {
+        Write-Host "$t is not registered -- skipping."
+    } else {
+        if ($task.State -eq "Running") {
+            Write-Host "Stopping $t..."
+            Stop-ScheduledTask -TaskName $t
+            Start-Sleep -Seconds 2
+        }
+        Write-Host "Removing $t..."
+        Unregister-ScheduledTask -TaskName $t -Confirm:$false
     }
-    Write-Host "Removing $TaskName..."
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Done. Logs remain in data\logs\capture\"
 }
+Write-Host "Done. Logs remain in data\logs\capture\"
 
 # Also clean up any lingering NSSM service (legacy, safe no-op if absent)
 $svc = Get-Service -Name $TaskName -ErrorAction SilentlyContinue

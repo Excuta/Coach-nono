@@ -55,23 +55,43 @@ Register-ScheduledTask `
     -Principal $principal `
     -Force | Out-Null
 
-Write-Host ""
 Write-Host "Task registered: $TaskName"
-Write-Host "Trigger: At logon for $env:USERNAME (interactive session -- no password needed)"
-Write-Host "Restart: every 1 min on crash, up to 999 times"
+
+# ---------------------------------------------------------------------------
+# Watchdog task: runs every 5 min, restarts capture if heartbeat goes stale
+# ---------------------------------------------------------------------------
+$WatchdogTask = "CoachNono-Watchdog"
+$Watchdog     = Join-Path $ScriptDir "watchdog.ps1"
+$PS           = (Get-Command powershell.exe).Source
+
+Unregister-ScheduledTask -TaskName $WatchdogTask -Confirm:$false -ErrorAction SilentlyContinue
+
+$wdAction = New-ScheduledTaskAction `
+    -Execute  $PS `
+    -Argument "-NonInteractive -WindowStyle Hidden -File `"$Watchdog`"" `
+    -WorkingDirectory $ScriptDir
+
+# Repeat every 5 minutes indefinitely
+$wdTrigger = New-ScheduledTaskTrigger -AtLogon -User $env:USERNAME
+$wdRepeat  = New-TimeSpan -Minutes 5
+$wdTrigger.Repetition = (New-ScheduledTaskTrigger -RepetitionInterval $wdRepeat -Once -At (Get-Date)).Repetition
+
+$wdSettings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([TimeSpan]::FromMinutes(2)) `
+    -MultipleInstances  IgnoreNew `
+    -StartWhenAvailable
+
+Register-ScheduledTask `
+    -TaskName  $WatchdogTask `
+    -Action    $wdAction `
+    -Trigger   $wdTrigger `
+    -Settings  $wdSettings `
+    -Principal $principal `
+    -Force | Out-Null
+
+Write-Host "Task registered: $WatchdogTask (fires every 5 min, restarts capture if heartbeat stale >45s)"
 Write-Host ""
-Write-Host "VALIDATION STEPS"
-Write-Host "  1. Start the task manually:"
-Write-Host "       Start-ScheduledTask $TaskName"
-Write-Host "  2. Confirm idle (ACC not running):"
-Write-Host "       Get-ScheduledTask $TaskName | Select-Object State"
-Write-Host "       Get-Content '$LogDir\service-stdout.log' -Tail 20   # or capture.log"
-Write-Host "       Get-Content '$LogDir\status.json'"
-Write-Host "  3. Open ACC, go on track, confirm laps appear in data\raw\"
-Write-Host "  4. Lockfile check: run .\run_capture.ps1 while task is running"
-Write-Host "       -> should exit 'task already running'"
+Write-Host "Both tasks auto-start at next logon."
 Write-Host ""
-Write-Host "The task auto-starts at next logon (Phase 3 is already wired -- no extra command needed)."
-Write-Host ""
-Write-Host "To stop:      Stop-ScheduledTask $TaskName"
+Write-Host "To stop:      Stop-ScheduledTask $TaskName; Stop-ScheduledTask $WatchdogTask"
 Write-Host "To uninstall: .\uninstall_service.ps1"
