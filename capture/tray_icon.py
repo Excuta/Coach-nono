@@ -19,13 +19,16 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
-_HERE      = Path(__file__).parent
-_REPO_ROOT = _HERE.parent
-_STATUS    = _REPO_ROOT / "data" / "logs" / "capture" / "status.json"
+_HERE           = Path(__file__).parent
+_REPO_ROOT      = _HERE.parent
+_STATUS         = _REPO_ROOT / "data" / "logs" / "capture" / "status.json"
+_LAST_COACHING  = _REPO_ROOT / "data" / "logs" / "process" / "last_coaching.json"
 
 POLL_SECONDS  = 5
 STALE_SECONDS = 30
 DASHBOARD_URL = "http://localhost:8502"
+
+_coaching_mtime: float = 0.0
 
 
 def _make_icon(color: str) -> Image.Image:
@@ -102,6 +105,34 @@ def _build_menu(label: str, tray_icon) -> pystray.Menu:
     )
 
 
+def _check_lap_coaching() -> None:
+    """Fire a BurntToast notification when a new coaching result lands."""
+    global _coaching_mtime
+    if not _LAST_COACHING.exists():
+        return
+    try:
+        mtime = _LAST_COACHING.stat().st_mtime
+        if mtime <= _coaching_mtime:
+            return
+        _coaching_mtime = mtime
+        data = json.loads(_LAST_COACHING.read_text(encoding="utf-8"))
+        if not data.get("valid"):
+            return
+        lap_str = data.get("lap_time_str", "?")
+        delta   = data.get("delta_s")
+        title   = f"Lap {lap_str}"
+        if delta is not None:
+            sign = "+" if delta >= 0 else ""
+            title += f"  {sign}{delta:.3f}s"
+        snippets = data.get("top_findings", [])
+        body = "  ·  ".join(snippets) if snippets else "No technique findings"
+        safe_title = title.replace("'", "").replace('"', "")
+        safe_body  = body.replace("'", "").replace('"', "")
+        _run_ps(f"New-BurntToastNotification -Text '{safe_title}', '{safe_body}'")
+    except Exception:
+        pass
+
+
 def _poll(tray_icon: pystray.Icon) -> None:
     while True:
         time.sleep(POLL_SECONDS)
@@ -109,6 +140,7 @@ def _poll(tray_icon: pystray.Icon) -> None:
         tray_icon.icon  = img
         tray_icon.title = tip
         tray_icon.menu  = _build_menu(label, tray_icon)
+        _check_lap_coaching()
 
 
 def main() -> None:
