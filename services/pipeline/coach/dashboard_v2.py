@@ -845,7 +845,7 @@ def _page_health():
         except: val = None
         if val is not None:
             col.metric(label, f"{val:.1f} / {max_v:.0f}")
-            col.progress(min(val / max_v, 1.0))
+            col.progress(max(0.0, min(val / max_v, 1.0)))
         else:
             col.metric(label, "—")
     _aid_bar(cb1, "Fuel rate",    "aid_fuel_rate")
