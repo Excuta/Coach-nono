@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import time
 
 from coach.schema import CanonicalSample, ExtendedSample, SessionContext
@@ -127,7 +128,7 @@ class ACCSource:
             front_brake_compound=int(p.front_brake_compound),
             rear_brake_compound=int(p.rear_brake_compound),
             # --- Damage ---
-            car_damage=tuple(float(x) for x in p.car_damage),
+            car_damage=tuple(float(x) for x in dataclasses.astuple(p.car_damage)),
             suspension_damage=_wheels_tuple(p.suspension_damage),
             # --- Drivetrain / engine ---
             clutch=float(p.clutch),
@@ -171,7 +172,9 @@ class ACCSource:
         )
 
     def coords_row(self, raw, t: float) -> dict:
-        c = raw.Graphics.car_coordinates
+        g = raw.Graphics
+        slot = next((i for i, cid in enumerate(g.car_id) if cid == g.player_car_id), 0)
+        c = g.car_coordinates[slot]
         return {"t": t, "x": float(c.x), "y": float(c.y), "z": float(c.z)}
 
 
