@@ -1,69 +1,80 @@
 # Coach Nono
 
-AI sim-racing coach for Assetto Corsa Competizione. Captures telemetry on the Windows host, processes it in Docker, and delivers per-lap coaching through a Streamlit dashboard.
+A personal AI sim-racing coach for Assetto Corsa Competizione, built around Yahia's wife Nono's voice and coaching style.
+
+Captures full telemetry from ACC's Win32 shared memory on the Windows host (~50 Hz, 71 channels), processes each lap through a Docker pipeline that computes delta traces, detects driving mistakes, and stores per-lap aggregates — then surfaces everything in a Streamlit dashboard. A GPU LLM coach (Ollama) is wired in as an optional profile for natural-language coaching feedback.
 
 ---
 
 ## Quick-start
 
 ```powershell
-# 1. Start the pipeline (first run builds images — takes a few minutes)
+# 1. Start the pipeline (first run builds images — a few minutes)
 docker compose up -d db ingest process dashboard-v2
 
-# 2. Apply the extended-telemetry migration (first run only, or after a DB volume wipe)
-docker compose exec -T db psql -U coach -d coach < db/init/02_extras.sql
+# 2. First run only: apply the extended-telemetry migration
+#    Must stop services first — ALTER TABLE hangs if any connection is open
+docker compose stop ingest process dashboard dashboard-v2
+Get-Content db\init\02_extras.sql | docker compose exec -T db psql -U coach -d coach
+docker compose up -d ingest process dashboard-v2
 
-# 3. Start capturing (run on the Windows host, not in Docker)
+# 3. Start capturing on the Windows host (not in Docker)
 .\capture\run_capture.ps1
 
 # 4. Open the dashboard
 start http://localhost:8502
 ```
 
+> **Migration note:** always use `Get-Content ... |` in PowerShell, not `<` — Git Bash on Windows mangles absolute paths with the `<` redirect.
+
 ---
 
-## Important commands
+## Commands
 
-### Pipeline (Docker)
+### Pipeline
 
 | Action | Command |
 |--------|---------|
 | Start CPU pipeline | `docker compose up -d db ingest process dashboard-v2` |
+| Rebuild after code changes | `docker compose up -d --build ingest process dashboard-v2` |
 | Stop everything | `docker compose down` |
-| Wipe DB volume (destructive) | `docker compose down -v` |
-| Rebuild images after code changes | `docker compose up -d --build` |
+| Wipe DB volume *(destructive)* | `docker compose down -v` |
 | Scale process workers | `docker compose up -d --scale process=4` |
-| Start GPU coach (needs Ollama) | `docker compose --profile gpu up -d` |
+| Start GPU coach | `docker compose --profile gpu up -d` |
 
 ### Logs
 
-| Action | Command |
-|--------|---------|
-| Watch ingest live | `docker compose logs -f ingest` |
-| Watch all services | `docker compose logs -f` |
-| Last 50 lines, then follow | `docker compose logs --tail=50 -f ingest` |
-| Watch ingest + process | `docker compose logs -f ingest process` |
+```powershell
+docker compose logs -f ingest            # watch ingest
+docker compose logs -f ingest process    # watch both workers
+docker compose logs --tail=50 -f ingest  # last 50 lines then follow
+```
 
 ### Database
 
-| Action | Command |
-|--------|---------|
-| Open psql | `docker compose exec db psql -U coach -d coach` |
-| Apply extras migration | `docker compose exec -T db psql -U coach -d coach < db/init/02_extras.sql` |
+```powershell
+# Open psql
+docker compose exec db psql -U coach -d coach
 
-### Capture agent (Windows host)
+# Apply a migration safely (stop services first — see migration note above)
+docker compose stop ingest process dashboard dashboard-v2
+Get-Content db\init\<file>.sql | docker compose exec -T db psql -U coach -d coach
+docker compose up -d ingest process dashboard-v2
+```
 
-| Action | Command |
-|--------|---------|
-| Start capture | `.\capture\run_capture.ps1` |
-| Start with coordinate recording | `$env:CAPTURE_COORDS = "true"; .\capture\run_capture.ps1` |
+### Capture (Windows host)
+
+```powershell
+.\capture\run_capture.ps1                                        # telemetry only
+$env:CAPTURE_COORDS = "true"; .\capture\run_capture.ps1         # + XYZ world coords
+```
 
 ### Dashboards
 
-| Dashboard | URL |
-|-----------|-----|
-| v1 (delta + coaching notes) | http://localhost:8501 |
-| v2 (full telemetry) | http://localhost:8502 |
+| Dashboard | URL | Contents |
+|-----------|-----|----------|
+| v2 (primary) | http://localhost:8502 | Full telemetry, delta, coaching notes, session health |
+| v1 | http://localhost:8501 | Delta trace + coaching notes (legacy) |
 
 ---
 
@@ -71,39 +82,33 @@ start http://localhost:8502
 
 ```
 WINDOWS HOST
-  ACC game
-    │  shared memory (Win32)
-    ▼
-  capture_agent.py  ── 50 Hz poll loop
-    │  on each lap crossing:
-    │    writes  data/raw/<session_id>/lap_NNN.parquet   (telemetry, ~50 Hz samples)
-    │    writes  data/raw/<session_id>/lap_NNN.meta.json (lap metadata, written last)
-    │    optionally writes  data/coords/<session_id>/lap_NNN.parquet  (XYZ world coords)
+  ACC game ──[Win32 shared memory]──► capture_agent.py  (50 Hz)
+                                        │
+                                        │  per completed lap (atomic write — parquet first, meta last):
+                                        ├── data/raw/<session_id>/lap_NNN.parquet   (71-channel telemetry)
+                                        ├── data/raw/<session_id>/lap_NNN.meta.json (lap metadata + statics)
+                                        └── data/coords/<session_id>/lap_NNN.parquet (XYZ, if CAPTURE_COORDS=true)
 
-DOCKER  (bind-mount: ./data → /data)
-  ingest  ── polls data/raw/ every 2 s for *.meta.json
-    │  for each lap file:
-    │    validates parquet (readable, ≥ 100 samples)
-    │    upserts sessions row, inserts laps row (status=pending)
-    │    moves parquet → data/laps/<session_id>/
-    │    computes per-lap aggregates → extras table (if extended schema)
-    │    registers coords path → coordinates table (if coords file present)
-    │    deletes meta.json  ← handshake signal "done"
-    ▼
-  process  ── SKIP LOCKED job queue (scalable: --scale process=N)
-    │  for each pending lap:
-    │    align: resample onto 1000-point spline grid
-    │    delta: cumulative time-delta vs personal best, 20-sector loss table
-    │    inputs: 7 detectors (trail-brake, coasting, lockup, overspeed, …)
-    │    writes findings → DB  (status=done)
-    │    updates PB if faster valid lap
-    ▼
-  dashboard-v2  (port 8502)
-    reads sessions, laps, extras, findings from DB
-    displays delta traces, telemetry overlays, coaching notes
+DOCKER  (bind-mount ./data → /data)
+  ingest  polls data/raw/ every 2 s
+    ├── validates parquet (≥100 samples)
+    ├── upserts sessions row (with statics: max_rpm, sector_count, player_name, aids…)
+    ├── inserts laps row  status=pending
+    ├── moves parquet → data/laps/<session_id>/
+    ├── computes 31 per-lap aggregates → extras table
+    ├── registers coords path → coordinates table
+    └── deletes meta.json  ← handshake: ingest done, process can claim
+
+  process  (SKIP LOCKED job queue, scalable)
+    ├── align: resample onto 1000-pt spline grid
+    ├── delta: cumulative time-delta vs PB, 20-sector loss table
+    ├── inputs: 7 detectors → findings (trail-brake, coasting, lockup, overspeed, steering, throttle, short-shift)
+    ├── updates PB on faster valid lap
+    └── status=done
+
+  dashboard-v2  :8502
+    └── reads sessions / laps / extras / findings / coordinates from DB
 ```
-
-**Handshake:** capture writes the parquet first, then the `.meta.json`. Ingest only picks up a lap when the meta file exists, so it never sees a half-written parquet. Ingest deletes the meta when done — safe to restart either side at any time.
 
 ---
 
@@ -111,23 +116,51 @@ DOCKER  (bind-mount: ./data → /data)
 
 ```
 data/
-  raw/          ← landing zone (capture writes here, ingest drains it)
-  laps/         ← permanent parquet store, organised by session_id
-  coords/       ← world-coordinate traces (CAPTURE_COORDS=true only)
-  findings/     ← per-lap analysis artefacts
+  raw/          ← landing zone; ingest drains to laps/ within 2 s
+  laps/         ← permanent parquet store  (data/laps/<session_id>/lap_NNN.parquet)
+  coords/       ← XYZ world-coordinate traces  (CAPTURE_COORDS=true only)
+  findings/     ← per-lap analysis artefacts written by process worker
   config/
-    thresholds.json   ← copy from thresholds.example.json and tune
+    thresholds.json   ← copy from thresholds.example.json and tune per car/track
 ```
+
+---
+
+## Telemetry schema
+
+Each lap parquet has **71 columns** at ~50 Hz:
+
+| Group | Channels |
+|-------|----------|
+| Core | `t`, `lap_time`, `spline`, `distance_m`, `speed`, `throttle`, `brake`, `steer`, `gear`, `rpm`, `fuel` |
+| Chassis dynamics | `g_lat`, `g_lon`, `g_vert`, `local_vel_x`, `yaw_rate`, `pitch_rate`, `roll_rate` |
+| Per-wheel (×4) | `tyre_temp`, `tyre_press`, `wheel_slip`, `slip_ratio`, `slip_angle`, `wheel_angular_s`, `suspension_travel`, `brake_temp`, `brake_pressure`, `pad_life`, `disc_life` |
+| Brakes | `brake_bias`, `front_brake_compound`, `rear_brake_compound` |
+| Damage | `car_damage` (5 zones), `suspension_damage` (4 wheels) |
+| Engine | `clutch`, `turbo_boost`, `water_temp`, `exhaust_temp`, `used_fuel`, `fuel_per_lap` |
+| Aids | `abs_active`, `tc_active`, `tc_level`, `tc_cut_level`, `abs_level`, `engine_map`, `autoshifter_on`, `pit_limiter_on` |
+| Environment | `air_temp`, `road_temp`, `wind_speed`, `wind_direction`, `rain_10min`, `rain_30min`, `track_grip_status` |
+| Session | `is_in_pit`, `is_in_pit_lane`, `current_sector_index`, `flag`, `position`, `gap_ahead`, `gap_behind`, `delta_lap_time`, `penalty_time`, `is_ai_controlled` |
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and adjust as needed. Key variables:
+Copy `.env.example` to `.env`. Key variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql://coach:coach@db:5432/coach` | Postgres connection |
-| `LOG_LEVEL` | `INFO` | `DEBUG` for extras/coords confirmation logs |
-| `CAPTURE_COORDS` | `false` | Record XYZ world coordinates per lap |
-| `COACH_MODEL` | `qwen2.5:7b-instruct-q4_K_M` | Ollama model for GPU coach |
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DATABASE_URL` | `postgresql://coach:coach@db:5432/coach` | |
+| `LOG_LEVEL` | `INFO` | `DEBUG` shows per-lap extras/coords confirmations |
+| `CAPTURE_COORDS` | *(off)* | Set to `true` to record XYZ world coordinates |
+| `COACH_MODEL` | `qwen2.5:7b-instruct-q4_K_M` | Ollama model used by GPU coach profile |
+
+---
+
+## Architecture notes
+
+- **Capture runs on Windows** — ACC shared memory is a Win32 named object, not accessible inside Docker.
+- **Session detection** uses `g.session_index` from ACC's GraphicsMap — increments on every new session regardless of car/track/type change. More reliable than comparing car/track strings (stale statics) or `completed_lap` regression (fails on first-lap restarts).
+- **Atomic file writes** — parquet is written to `.parquet.tmp` then `os.replace()`d; meta.json always written last. Ingest will never see a partial lap.
+- **`fuel_used_lap` on outlap (lap_index=0)** is unreliable — fuel reading at session start captures garage-fill state, not lap start. Ignore for lap 0.
+- **DB migrations** require all services stopped first. `ALTER TABLE sessions` will hang indefinitely if any psycopg2 connection is open (idle connections hold locks in autocommit=False mode).
