@@ -53,20 +53,6 @@ services:
     restart: unless-stopped
     # scale at runtime: docker compose up -d --scale process=4
 
-  dashboard:
-    build: ./services/pipeline
-    command: ["streamlit", "run", "coach/dashboard.py",
-              "--server.port", "8501", "--server.address", "0.0.0.0"]
-    environment: *pipeline-env
-    volumes:
-      - ./data:/data
-    ports:
-      - "8501:8501"
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
   dashboard-v2:
     build: ./services/pipeline
     command: ["streamlit", "run", "coach/dashboard_v2.py",

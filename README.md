@@ -14,7 +14,7 @@ docker compose up -d db ingest process dashboard-v2
 
 # 2. First run only: apply the extended-telemetry migration
 #    Must stop services first — ALTER TABLE hangs if any connection is open
-docker compose stop ingest process dashboard dashboard-v2
+docker compose stop ingest process dashboard-v2
 Get-Content db\init\02_extras.sql | docker compose exec -T db psql -U coach -d coach
 docker compose up -d ingest process dashboard-v2
 
@@ -35,7 +35,7 @@ start http://localhost:8502
 
 | Action | Command |
 |--------|---------|
-| Start CPU pipeline | `docker compose up -d db ingest process dashboard-v2` |
+| Start pipeline | `docker compose up -d db ingest process dashboard-v2` |
 | Rebuild after code changes | `docker compose up -d --build ingest process dashboard-v2` |
 | Stop everything | `docker compose down` |
 | Wipe DB volume *(destructive)* | `docker compose down -v` |
@@ -56,8 +56,8 @@ docker compose logs --tail=50 -f ingest  # last 50 lines then follow
 # Open psql
 docker compose exec db psql -U coach -d coach
 
-# Apply a migration safely (stop services first — see migration note above)
-docker compose stop ingest process dashboard dashboard-v2
+# Apply a migration safely (stop services first — ALTER TABLE hangs with open connections)
+docker compose stop ingest process dashboard-v2
 Get-Content db\init\<file>.sql | docker compose exec -T db psql -U coach -d coach
 docker compose up -d ingest process dashboard-v2
 ```
@@ -65,16 +65,34 @@ docker compose up -d ingest process dashboard-v2
 ### Capture (Windows host)
 
 ```powershell
+# Manual launch (current)
 .\capture\run_capture.ps1                                        # telemetry only
 $env:CAPTURE_COORDS = "true"; .\capture\run_capture.ps1         # + XYZ world coords
+
+# Planned: NSSM Windows Service (see capture/ROBUST_CAPTURE_PLAN.md)
+# Once installed, capture starts automatically at login — run_capture.ps1 becomes debug-only
+.\capture\install_service.ps1   # one-time install
+Start-Service CoachNono-Capture
+Stop-Service  CoachNono-Capture
 ```
 
-### Dashboards
+### Data layer observability
 
-| Dashboard | URL | Contents |
-|-----------|-----|----------|
-| v2 (primary) | http://localhost:8502 | Full telemetry, delta, coaching notes, session health |
-| v1 | http://localhost:8501 | Delta trace + coaching notes (legacy) |
+```powershell
+# Snapshot: container states, capture status, pending/processed lap counts, disk space
+.\capture\status.ps1
+
+# Live lap feed: watches for new laps as they are written (Ctrl+C to stop)
+# Phase 1+: tails the structured log file with formatted output
+# Now: polls data/raw/ for new meta.json files
+.\capture\watch_laps.ps1
+```
+
+### Dashboard
+
+| URL | Contents |
+|-----|----------|
+| http://localhost:8502 | Full telemetry, delta, coaching notes, session health |
 
 ---
 
@@ -120,6 +138,9 @@ data/
   laps/         ← permanent parquet store  (data/laps/<session_id>/lap_NNN.parquet)
   coords/       ← XYZ world-coordinate traces  (CAPTURE_COORDS=true only)
   findings/     ← per-lap analysis artefacts written by process worker
+  logs/
+    capture/    ← capture agent logs + status.json heartbeat (readable by Docker services)
+    sweep/      ← ingest-sweep run log (planned)
   config/
     thresholds.json   ← copy from thresholds.example.json and tune per car/track
 ```
@@ -160,7 +181,7 @@ Copy `.env.example` to `.env`. Key variables:
 ## Architecture notes
 
 - **Capture runs on Windows** — ACC shared memory is a Win32 named object, not accessible inside Docker.
-- **Session detection** uses `g.session_index` from ACC's GraphicsMap — increments on every new session regardless of car/track/type change. More reliable than comparing car/track strings (stale statics) or `completed_lap` regression (fails on first-lap restarts).
+- **Session detection** uses three signals in priority order: (1) `g.session_index` change — increments on every new ACC session; (2) `completed_lap` regression — catches track switches where `session_index` stays the same; (3) statics debounce (150 samples = 3 s) — catches practice-server rejoins with restored state where neither of the above fires.
 - **Atomic file writes** — parquet is written to `.parquet.tmp` then `os.replace()`d; meta.json always written last. Ingest will never see a partial lap.
 - **`fuel_used_lap` on outlap (lap_index=0)** is unreliable — fuel reading at session start captures garage-fill state, not lap start. Ignore for lap 0.
 - **DB migrations** require all services stopped first. `ALTER TABLE sessions` will hang indefinitely if any psycopg2 connection is open (idle connections hold locks in autocommit=False mode).
