@@ -16,7 +16,7 @@ dependencies = [
     # Signal processing (align, delta)
     "scipy>=1.13",
     # File watching (ingest)
-    "watchdog>=4.0",
+    "watchdog>=6.0.0",
     # Dashboard
     "streamlit>=1.35",
     "plotly>=5.22",
