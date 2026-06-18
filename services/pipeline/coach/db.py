@@ -19,6 +19,9 @@ def conn() -> psycopg2.extensions.connection:
     if _conn is None or _conn.closed:
         _conn = psycopg2.connect(cfg.database_url)
         _conn.autocommit = False
+    elif _conn.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_INERROR:
+        # Recover from an aborted transaction left by a prior failure.
+        _conn.rollback()
     return _conn
 
 
