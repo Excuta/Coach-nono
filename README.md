@@ -6,26 +6,81 @@ Captures full telemetry from ACC's Win32 shared memory on the Windows host (~50 
 
 ---
 
+## Installation
+
+### Prerequisites
+
+| | |
+|---|---|
+| **OS** | Windows 10 / 11 — the capture agent reads ACC's Win32 shared memory, which is only accessible on the Windows host |
+| **ACC** | Assetto Corsa Competizione (licensed copy) |
+| **Docker Desktop** | [docs.docker.com/desktop/windows](https://docs.docker.com/desktop/windows/) — WSL 2 backend recommended |
+| **Git** | To clone the repository |
+| **Python 3.10+** | For the capture agent — the bootstrap script creates a local venv on first run, no manual install needed |
+
+> **PowerShell execution policy:** if `.ps1` scripts are blocked, run once in an elevated prompt:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
+
+### Steps
+
+**1. Clone**
+```powershell
+git clone https://github.com/Excuta/Coach-nono.git
+cd Coach-nono
+```
+
+**2. Configure** (optional — defaults work without a `.env` file)
+```powershell
+Copy-Item .env.example .env
+# Open .env to set a custom DB password, enable CAPTURE_COORDS, etc.
+```
+
+**3. Start the pipeline** (first run builds Docker images — allow a few minutes)
+```powershell
+docker compose up -d
+```
+Starts `db`, `ingest`, `process`, `dashboard-v2`, and `ingest-sweep`. The database schema initialises automatically on a fresh volume — no manual migration step needed.
+
+**4. Start capture** on the Windows host (not inside Docker)
+```powershell
+.\capture\run_capture.ps1
+```
+First run creates a Python venv and installs dependencies automatically. Press `Ctrl+C` to stop.
+
+**5. Open the dashboard**
+```
+http://localhost:8502
+```
+
+> **Detector tuning** (optional): copy `thresholds.example.json` to `data\config\thresholds.json` and adjust per car/track. Without it the pipeline uses built-in defaults — you do not need this to get started.
+
+> **GPU LLM coach** (optional, Phase E): `docker compose --profile gpu up -d` — requires an NVIDIA GPU and a running Ollama server.
+
+---
+
 ## Quick-start
 
+For an existing installation, the minimal daily workflow:
+
 ```powershell
-# 1. Start the pipeline (first run builds images — a few minutes)
-docker compose up -d db ingest process dashboard-v2
+# Start the pipeline (if not already running)
+docker compose up -d
 
-# 2. First run only: apply the extended-telemetry migration
-#    Must stop services first — ALTER TABLE hangs if any connection is open
-docker compose stop ingest process dashboard-v2
-Get-Content db\init\02_extras.sql | docker compose exec -T db psql -U coach -d coach
-docker compose up -d ingest process dashboard-v2
-
-# 3. Start capturing on the Windows host (not in Docker)
+# Start capturing on the Windows host (not in Docker)
 .\capture\run_capture.ps1
 
-# 4. Open the dashboard
+# Open the dashboard
 start http://localhost:8502
 ```
 
-> **Migration note:** always use `Get-Content ... |` in PowerShell, not `<` — Git Bash on Windows mangles absolute paths with the `<` redirect.
+> **Upgrading an existing volume** (extended-telemetry migration): if you set up before the extras table was added, apply it once manually. Always use `Get-Content ... |` in PowerShell — Git Bash mangles absolute paths with `<`:
+> ```powershell
+> docker compose stop ingest process dashboard-v2 ingest-sweep
+> Get-Content db\init\02_extras.sql | docker compose exec -T db psql -U coach -d coach
+> docker compose up -d
+> ```
 
 ---
 
