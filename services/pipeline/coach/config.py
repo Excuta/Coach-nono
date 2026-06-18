@@ -65,6 +65,10 @@ class _Config:
     coach_tts: str = os.getenv("COACH_TTS", "")
     tts_voice_ref: str = os.getenv("TTS_VOICE_REF", "")  # path to Nono's reference WAV
 
+    # Game version used to scope baselines — baselines from different major versions are never mixed.
+    # Update this env var when ACC ships a major physics update (e.g. "1.11").
+    game_version_major: str = os.getenv("GAME_VERSION_MAJOR", "1.10")
+
     # Worker lease: seconds before a claimed-but-silent lap is reset to pending
     worker_lease_minutes: int = int(os.getenv("WORKER_LEASE_MINUTES", "5"))
 
