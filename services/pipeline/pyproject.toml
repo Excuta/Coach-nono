@@ -12,7 +12,7 @@ dependencies = [
     # Data / parquet
     "pyarrow>=15.0",
     "pandas>=2.2",
-    "numpy>=1.26",
+    "numpy>=2.4.6",
     # Signal processing (align, delta)
     "scipy>=1.13",
     # File watching (ingest)
