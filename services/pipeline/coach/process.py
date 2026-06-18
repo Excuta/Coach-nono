@@ -24,6 +24,7 @@ from coach import inputs
 from coach.analysis import corners as corner_mod
 from coach.analysis import db_ops as adb
 from coach.analysis import findings as afind
+from coach.analysis import tyre_ops as tyre_mod
 
 logging.basicConfig(
     level=cfg.log_level,
@@ -302,6 +303,64 @@ def _run_corner_analysis(
 
 
 # ---------------------------------------------------------------------------
+# Tyre analysis (Phase E3.5) — always runs, never blocks
+# ---------------------------------------------------------------------------
+
+_COACHING_LOG_DIR = cfg.data_dir / "logs" / "process"
+
+def _run_tyre_analysis(lap_id: str, raw_df: pd.DataFrame) -> None:
+    """Compute per-wheel tyre/brake aggregates and store in tyre_laps."""
+    try:
+        stats = tyre_mod.compute_tyre_stats(raw_df)
+        if stats:
+            tyre_mod.store_tyre_stats(conn(), lap_id, stats)
+    except Exception:
+        log.exception("Tyre analysis failed for lap %s — skipping", lap_id)
+
+
+def _write_coaching_notification(
+    lap_id: str,
+    lap_time: float,
+    valid: bool,
+    findings: list[dict],
+    total_delta: float | None,
+) -> None:
+    """Write last_coaching.json for the tray icon to pick up and toast."""
+    try:
+        _COACHING_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        corner_findings = [
+            f for f in findings
+            if (f.get("detail") or {}).get("source") == "corner_baseline"
+        ]
+        top = sorted(corner_findings, key=lambda f: -f["severity"])[:2]
+        snippets = []
+        for f in top:
+            d = f.get("detail") or {}
+            kind = f["kind"].replace("_", " ")
+            corner = f.get("corner")
+            cname = f"T{corner}" if corner is not None else "—"
+            snippets.append(f"{cname} {kind}")
+
+        m, s = divmod(lap_time, 60)
+        payload = {
+            "lap_id":      lap_id,
+            "lap_time":    round(lap_time, 3),
+            "lap_time_str": f"{int(m)}:{s:06.3f}",
+            "valid":       valid,
+            "delta_s":     round(total_delta, 3) if total_delta is not None else None,
+            "top_findings": snippets,
+            "written_at":  time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        path = _COACHING_LOG_DIR / "last_coaching.json"
+        tmp  = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        log.exception("Could not write coaching notification for lap %s", lap_id)
+
+
+# ---------------------------------------------------------------------------
 # Core processing
 # ---------------------------------------------------------------------------
 
@@ -320,6 +379,9 @@ def _process_lap(lap: dict) -> None:
     raw_df = pd.read_parquet(lap["lap_path"])
     aligned = align(raw_df)
 
+    # Tyre + brake aggregates (uses raw_df — array columns survive pre-alignment)
+    _run_tyre_analysis(lap_id, raw_df)
+
     pb_meta = _get_pb(game, car, track)
     pb_aligned = _load_pb_aligned(game, car, track)
 
@@ -333,21 +395,25 @@ def _process_lap(lap: dict) -> None:
     # Corner analysis — statistical findings, self-calibrating baselines (Phase E1)
     corner_findings = _run_corner_analysis(lap_id, aligned, game, car, track, valid)
 
+    all_findings = input_findings + corner_findings
+
     if pb_meta is None or pb_aligned is None:
         # First lap for this combo — register as PB and skip delta
         log.info("No PB found for %s/%s/%s — registering lap %s as PB", game, car, track, lap_id)
         if valid:
             _save_pb_aligned(game, car, track, aligned)
             _upsert_pb(game, car, track, lap_id, lap_time)
-        if input_findings or corner_findings:
-            _insert_findings(lap_id, input_findings + corner_findings)
+        if all_findings:
+            _insert_findings(lap_id, all_findings)
         _mark_done(lap_id)
+        _write_coaching_notification(lap_id, lap_time, valid, all_findings, None)
         return
 
     # Compute delta vs PB
     trace, sectors = compute_delta(aligned, pb_aligned)
     _save_delta_trace(lap_id, trace)
-    _insert_findings(lap_id, _sectors_to_findings(sectors) + input_findings + corner_findings)
+    sector_findings = _sectors_to_findings(sectors)
+    _insert_findings(lap_id, sector_findings + all_findings)
 
     total_delta = float(trace["delta"].iloc[-1])
     log.info("Delta vs PB: %+.3f s  (worst sector: %.3f s)",
@@ -361,6 +427,7 @@ def _process_lap(lap: dict) -> None:
         _upsert_pb(game, car, track, lap_id, lap_time)
 
     _mark_done(lap_id)
+    _write_coaching_notification(lap_id, lap_time, valid, all_findings, total_delta)
 
 
 # ---------------------------------------------------------------------------

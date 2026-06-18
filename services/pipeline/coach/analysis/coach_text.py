@@ -81,6 +81,7 @@ def build_coaching_card(
     lap_time: float,
     total_delta: float | None,
     corner_names: dict[int, str],
+    setup_advice: list[dict] | None = None,
 ) -> str:
     """Return a markdown coaching card for one lap.
 
@@ -159,6 +160,17 @@ def build_coaching_card(
         lines.append("**🎯 Focus next session**")
         for i, item in enumerate(focus[:3], 1):
             lines.append(f"{i}. {item}")
+        lines.append("")
+
+    # ── Setup hints ───────────────────────────────────────────────────────────
+    if setup_advice:
+        lines.append("**⚙️ Setup**")
+        for adv in setup_advice[:2]:
+            lines.append(f"- *{adv['symptom']}*")
+            for hint in adv["hints"]:
+                lines.append(f"  - {hint}")
+            if adv.get("note"):
+                lines.append(f"  _{adv['note']}_")
         lines.append("")
 
     # ── Empty state ───────────────────────────────────────────────────────────

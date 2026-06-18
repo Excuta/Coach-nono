@@ -248,6 +248,29 @@ def load_corner_baselines(game: str, game_version_major: str, track: str, car: s
 
 
 @st.cache_data
+def load_tyre_fuel(game: str, track: str, car: str) -> pd.DataFrame:
+    """Per-lap tyre + fuel aggregates for all valid done laps on a track/car combo."""
+    rows = _query(
+        "SELECT l.id AS lap_id, l.lap_index, l.lap_time, l.created_at,"
+        "       tl.press_avg_fl, tl.press_avg_fr, tl.press_avg_rl, tl.press_avg_rr,"
+        "       tl.temp_avg_fl, tl.temp_avg_fr, tl.temp_avg_rl, tl.temp_avg_rr,"
+        "       tl.temp_max_fl, tl.temp_max_fr, tl.temp_max_rl, tl.temp_max_rr,"
+        "       tl.pad_life_fl, tl.pad_life_fr, tl.pad_life_rl, tl.pad_life_rr,"
+        "       tl.disc_life_fl, tl.disc_life_fr, tl.disc_life_rl, tl.disc_life_rr,"
+        "       e.fuel_used_lap, e.pad_life_min, e.disc_life_min "
+        "FROM laps l "
+        "JOIN sessions s ON s.id = l.session_id "
+        "LEFT JOIN tyre_laps tl ON tl.lap_id = l.id "
+        "LEFT JOIN extras e ON e.lap_id = l.id "
+        "WHERE s.game=%s AND s.track=%s AND s.car=%s "
+        "  AND l.valid=true AND l.status='done' "
+        "ORDER BY l.created_at",
+        (game, track, car),
+    )
+    return pd.DataFrame(rows)
+
+
+@st.cache_data
 def load_all_corner_stats(game: str, game_version_major: str, track: str, car: str) -> pd.DataFrame:
     """All corner_stats for a track/car/version, with lap metadata for trend charts."""
     rows = _query(
@@ -307,7 +330,7 @@ with st.sidebar:
     page = st.radio(
         "View",
         ["① Lap Telemetry", "② Track Map", "③ Session & Health",
-         "④ Corner Analysis", "⑤ Lap Trends"],
+         "④ Corner Analysis", "⑤ Lap Trends", "⑥ Tyre & Fuel"],
         label_visibility="collapsed",
     )
     st.divider()
@@ -1190,14 +1213,16 @@ def _page_health():
     # Row J — Coaching card + notes
     st.subheader("Coaching")
 
-    from coach.analysis.coach_text import build_coaching_card  # local import avoids circular
+    from coach.analysis.coach_text import build_coaching_card
+    from coach.analysis.setup_advisor import advise_setup
 
     _game_h  = sel_sess.get("game", "acc")
     _corners_h = load_corners(_game_h, sel_sess["track"])
     _cnames    = {c["corner_index"]: c["name"] for c in _corners_h}
     _total_delta = float(delta_df["delta"].iloc[-1]) if delta_df is not None and len(delta_df) else None
+    _setup_hints = advise_setup(findings)
 
-    card_md = build_coaching_card(findings, sel_lap["lap_time"], _total_delta, _cnames)
+    card_md = build_coaching_card(findings, sel_lap["lap_time"], _total_delta, _cnames, _setup_hints)
     with st.container(border=True):
         st.markdown(card_md)
 
@@ -1498,6 +1523,133 @@ def _page_trends():
 
 
 # ---------------------------------------------------------------------------
+# Page ⑥ — Tyre & Fuel
+# ---------------------------------------------------------------------------
+
+def _page_tyre_fuel():
+    game  = sel_sess.get("game", "acc")
+    track = sel_sess["track"]
+    car   = sel_sess["car"]
+
+    df = load_tyre_fuel(game, track, car)
+    if df.empty:
+        st.info("No tyre/fuel data yet — laps need to be processed with the latest pipeline.")
+        return
+
+    df = df.reset_index(drop=True)
+    df["seq"] = range(1, len(df) + 1)
+
+    # ── Fuel consumption ──────────────────────────────────────────────────────
+    st.subheader("Fuel")
+    fuel_df = df.dropna(subset=["fuel_used_lap"])
+    if not fuel_df.empty:
+        avg_fuel = fuel_df["fuel_used_lap"].mean()
+        max_fuel = sel_sess.get("max_fuel")
+        try:
+            stint_laps = int(float(max_fuel) / avg_fuel) if max_fuel else None
+        except Exception:
+            stint_laps = None
+
+        fig_f = go.Figure()
+        fig_f.add_trace(go.Bar(
+            x=fuel_df["seq"], y=fuel_df["fuel_used_lap"],
+            marker_color=C["fuel"], name="Fuel used (L)",
+        ))
+        fig_f.add_hline(y=avg_fuel, line_dash="dash",
+                        line_color="rgba(255,255,255,0.4)",
+                        annotation_text=f"Avg {avg_fuel:.2f} L",
+                        annotation_font_size=10)
+        _base_layout(fig_f, height=220)
+        fig_f.update_xaxes(title_text="Lap")
+        fig_f.update_yaxes(title_text="Fuel (L)")
+        st.plotly_chart(fig_f, use_container_width=True)
+
+        cap = f"Average: **{avg_fuel:.2f} L/lap**"
+        if stint_laps:
+            cap += f"  ·  Projected stint: **{stint_laps} laps** from full tank ({float(max_fuel):.0f} L)"
+        st.caption(cap)
+    else:
+        st.caption("No fuel data in processed laps.")
+
+    # ── Tyre temperature ─────────────────────────────────────────────────────
+    st.subheader("Tyre temperature (mean per lap)")
+    temp_cols = [f"temp_avg_{w}" for w in WHEEL_LABELS]
+    temp_df = df.dropna(subset=temp_cols, how="all")
+    if not temp_df.empty:
+        fig_tt = go.Figure()
+        for w, lbl, col in zip(WHEEL_LABELS, WHEEL_DISPLAY, WHEEL_COLORS):
+            c_name = f"temp_avg_{w}"
+            if c_name in temp_df.columns and temp_df[c_name].notna().any():
+                fig_tt.add_trace(go.Scatter(
+                    x=temp_df["seq"], y=temp_df[c_name],
+                    mode="lines+markers", name=lbl,
+                    line=dict(color=col, width=1.5),
+                    marker=dict(size=5),
+                ))
+        _base_layout(fig_tt, height=260)
+        fig_tt.update_xaxes(title_text="Lap")
+        fig_tt.update_yaxes(title_text="°C")
+        st.plotly_chart(fig_tt, use_container_width=True)
+    else:
+        st.caption("No tyre temperature data in processed laps.")
+
+    # ── Tyre pressure ─────────────────────────────────────────────────────────
+    st.subheader("Tyre pressure (mean per lap)")
+    press_cols = [f"press_avg_{w}" for w in WHEEL_LABELS]
+    press_df = df.dropna(subset=press_cols, how="all")
+    if not press_df.empty:
+        fig_tp = go.Figure()
+        for w, lbl, col in zip(WHEEL_LABELS, WHEEL_DISPLAY, WHEEL_COLORS):
+            c_name = f"press_avg_{w}"
+            if c_name in press_df.columns and press_df[c_name].notna().any():
+                fig_tp.add_trace(go.Scatter(
+                    x=press_df["seq"], y=press_df[c_name],
+                    mode="lines+markers", name=lbl,
+                    line=dict(color=col, width=1.5),
+                    marker=dict(size=5),
+                ))
+        _base_layout(fig_tp, height=260)
+        fig_tp.update_xaxes(title_text="Lap")
+        fig_tp.update_yaxes(title_text="bar")
+        st.plotly_chart(fig_tp, use_container_width=True)
+    else:
+        st.caption("No tyre pressure data in processed laps.")
+
+    # ── Brake wear ────────────────────────────────────────────────────────────
+    pad_cols  = [f"pad_life_{w}" for w in WHEEL_LABELS]
+    disc_cols = [f"disc_life_{w}" for w in WHEEL_LABELS]
+    pad_df  = df.dropna(subset=pad_cols,  how="all")
+    disc_df = df.dropna(subset=disc_cols, how="all")
+    if not pad_df.empty or not disc_df.empty:
+        st.subheader("Brake wear (end of lap, 0=worn, 1=new)")
+        fig_bw = go.Figure()
+        if not pad_df.empty:
+            for w, lbl, col in zip(WHEEL_LABELS, WHEEL_DISPLAY, WHEEL_COLORS):
+                c_name = f"pad_life_{w}"
+                if pad_df[c_name].notna().any():
+                    fig_bw.add_trace(go.Scatter(
+                        x=pad_df["seq"], y=pad_df[c_name],
+                        mode="lines+markers", name=f"Pad {lbl}",
+                        line=dict(color=col, width=1.5, dash="solid"),
+                        marker=dict(size=5),
+                    ))
+        if not disc_df.empty:
+            for w, lbl, col in zip(WHEEL_LABELS, WHEEL_DISPLAY, WHEEL_COLORS):
+                c_name = f"disc_life_{w}"
+                if disc_df[c_name].notna().any():
+                    fig_bw.add_trace(go.Scatter(
+                        x=disc_df["seq"], y=disc_df[c_name],
+                        mode="lines+markers", name=f"Disc {lbl}",
+                        line=dict(color=col, width=1.5, dash="dot"),
+                        marker=dict(size=5, symbol="diamond"),
+                    ))
+        _base_layout(fig_bw, height=280)
+        fig_bw.update_xaxes(title_text="Lap")
+        fig_bw.update_yaxes(title_text="Life (0–1)")
+        st.plotly_chart(fig_bw, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -1509,5 +1661,7 @@ elif page == "③ Session & Health":
     _page_health()
 elif page == "④ Corner Analysis":
     _page_corner_analysis()
-else:
+elif page == "⑤ Lap Trends":
     _page_trends()
+else:
+    _page_tyre_fuel()
