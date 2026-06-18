@@ -6,13 +6,13 @@
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Guard: bail if the NSSM service is already capturing.
+# Guard: bail if the scheduled task is already capturing.
 # The Python lockfile also catches this, but failing here gives a cleaner message.
-$svc = Get-Service -Name "CoachNono-Capture" -ErrorAction SilentlyContinue
-if ($svc -and $svc.Status -eq "Running") {
-    Write-Host "CoachNono-Capture service is already running -- not starting a second instance."
-    Write-Host "  Stop service:   Stop-Service CoachNono-Capture"
-    Write-Host "  Check status:   .\status.ps1"
+$task = Get-ScheduledTask -TaskName "CoachNono-Capture" -ErrorAction SilentlyContinue
+if ($task -and $task.State -eq "Running") {
+    Write-Host "CoachNono-Capture task is already running -- not starting a second instance."
+    Write-Host "  Stop task:    Stop-ScheduledTask CoachNono-Capture"
+    Write-Host "  Check status: .\capture\status.ps1"
     exit 1
 }
 

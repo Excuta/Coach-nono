@@ -1,6 +1,6 @@
 # Coach Nono
 
-A personal AI sim-racing coach for Assetto Corsa Competizione, built around Yahia's wife Nono's voice and coaching style.
+A WIP data pipeline for ACC which might eventually reach an ai coach voiced by my wife
 
 Captures full telemetry from ACC's Win32 shared memory on the Windows host (~50 Hz, 71 channels), processes each lap through a Docker pipeline that computes delta traces, detects driving mistakes, and stores per-lap aggregates — then surfaces everything in a Streamlit dashboard. A GPU LLM coach (Ollama) is wired in as an optional profile for natural-language coaching feedback.
 
@@ -120,15 +120,15 @@ docker compose up -d ingest process dashboard-v2
 ### Capture (Windows host)
 
 ```powershell
-# Manual launch (current)
+# Manual launch (debug / one-off sessions)
 .\capture\run_capture.ps1                                        # telemetry only
 $env:CAPTURE_COORDS = "true"; .\capture\run_capture.ps1         # + XYZ world coords
 
-# Planned: NSSM Windows Service (see capture/ROBUST_CAPTURE_PLAN.md)
-# Once installed, capture starts automatically at login — run_capture.ps1 becomes debug-only
-.\capture\install_service.ps1   # one-time install
-Start-Service CoachNono-Capture
-Stop-Service  CoachNono-Capture
+# Windows Scheduled Task (auto-starts at login — see capture/ROBUST_CAPTURE_PLAN.md)
+.\capture\install_service.ps1              # one-time install (no admin / stored password needed)
+Start-ScheduledTask CoachNono-Capture      # start now (task auto-starts at next logon)
+Stop-ScheduledTask  CoachNono-Capture      # stop
+.\capture\uninstall_service.ps1            # remove
 ```
 
 ### Data layer observability

@@ -1,4 +1,4 @@
-# Prints a snapshot of the Coach Nono data collection layer.
+﻿# Prints a snapshot of the Coach Nono data collection layer.
 # Run from repo root: .\capture\status.ps1
 
 $ROOT   = Split-Path $PSScriptRoot -Parent
@@ -16,13 +16,13 @@ function Format-GB($bytes) {
     "{0:N1} GB" -f ($bytes / 1GB)
 }
 
-# ── Header ──────────────────────────────────────────────
+# -- Header ----------------------------------------------
 Write-Host ""
-Write-Host "  Coach Nono — Data Layer Status" -ForegroundColor Cyan
+Write-Host "  Coach Nono -- Data Layer Status" -ForegroundColor Cyan
 Write-Host "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 Write-Host "  $HR"
 
-# ── Docker containers ────────────────────────────────────
+# -- Docker containers ------------------------------------
 Write-Section "  Containers"
 $dockerOk = $false
 try {
@@ -48,14 +48,14 @@ if ($dockerOk -and $psOutput) {
     Write-Host "    Docker not reachable (is Docker Desktop running?)" -ForegroundColor Red
 }
 
-# ── Capture agent ────────────────────────────────────────
+# -- Capture agent ----------------------------------------
 Write-Section "  Capture Agent"
 if (Test-Path $STATUS) {
     try {
         $s   = Get-Content $STATUS -Raw | ConvertFrom-Json
         $age = [int](New-TimeSpan -Start ([datetime]$s.last_heartbeat) -End (Get-Date)).TotalSeconds
         if ($age -gt 15) {
-            Write-Host "    STALE — last heartbeat ${age}s ago" -ForegroundColor Red
+            Write-Host "    STALE -- last heartbeat ${age}s ago" -ForegroundColor Red
         } else {
             $stColor = switch ($s.state) {
                 "live"        { "Green"  }
@@ -80,7 +80,7 @@ if (Test-Path $STATUS) {
         Write-Host "    status.json unreadable: $_" -ForegroundColor Red
     }
 } else {
-    # Phase 0: no status.json yet — check for the process
+    # Phase 0: no status.json yet -- check for the process
     $running = $false
     try {
         $running = ($null -ne (
@@ -89,13 +89,13 @@ if (Test-Path $STATUS) {
         ))
     } catch { }
     if ($running) {
-        Write-Host "    Running  (no status.json — Phase 1 logging not yet wired)" -ForegroundColor Yellow
+        Write-Host "    Running  (no status.json -- Phase 1 logging not yet wired)" -ForegroundColor Yellow
     } else {
         Write-Host "    NOT running" -ForegroundColor Red
     }
 }
 
-# ── data/raw — pending ingest ────────────────────────────
+# -- data/raw -- pending ingest ----------------------------
 Write-Section "  data/raw  (pending ingest)"
 if (Test-Path $RAW) {
     $sessions  = @(Get-ChildItem $RAW -Directory -ErrorAction SilentlyContinue)
@@ -111,7 +111,7 @@ if (Test-Path $RAW) {
     Write-Host "    (directory not found)" -ForegroundColor DarkGray
 }
 
-# ── data/laps — processed ────────────────────────────────
+# -- data/laps -- processed --------------------------------
 Write-Section "  data/laps  (processed)"
 if (Test-Path $LAPS) {
     $lapSess  = @(Get-ChildItem $LAPS -Directory -ErrorAction SilentlyContinue)
@@ -126,7 +126,7 @@ if (Test-Path $LAPS) {
     Write-Host "    (directory not found)" -ForegroundColor DarkGray
 }
 
-# ── Disk space ───────────────────────────────────────────
+# -- Disk space -------------------------------------------
 Write-Section "  Disk Space"
 try {
     $drive   = [System.IO.DriveInfo]::new((Split-Path $DATA -Qualifier))
