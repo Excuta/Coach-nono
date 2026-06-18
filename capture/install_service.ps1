@@ -91,7 +91,35 @@ Register-ScheduledTask `
 
 Write-Host "Task registered: $WatchdogTask (fires every 5 min, restarts capture if heartbeat stale >45s)"
 Write-Host ""
-Write-Host "Both tasks auto-start at next logon."
+# ---------------------------------------------------------------------------
+# Tray icon task: pure viewer, starts at logon alongside capture
+# ---------------------------------------------------------------------------
+$TrayTask = "CoachNono-Tray"
+$Tray     = Join-Path $ScriptDir "tray_icon.py"
+
+Unregister-ScheduledTask -TaskName $TrayTask -Confirm:$false -ErrorAction SilentlyContinue
+
+$trayAction = New-ScheduledTaskAction `
+    -Execute          $PythonW `
+    -Argument         "`"$Tray`"" `
+    -WorkingDirectory $ScriptDir
+
+$trayTrigger  = New-ScheduledTaskTrigger -AtLogon -User $env:USERNAME
+$traySettings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -MultipleInstances  IgnoreNew
+
+Register-ScheduledTask `
+    -TaskName  $TrayTask `
+    -Action    $trayAction `
+    -Trigger   $trayTrigger `
+    -Settings  $traySettings `
+    -Principal $principal `
+    -Force | Out-Null
+
+Write-Host "Task registered: $TrayTask (system tray viewer, green/amber/red)"
 Write-Host ""
-Write-Host "To stop:      Stop-ScheduledTask $TaskName; Stop-ScheduledTask $WatchdogTask"
+Write-Host "All three tasks auto-start at next logon."
+Write-Host ""
+Write-Host "To stop:      Stop-ScheduledTask $TaskName; Stop-ScheduledTask $WatchdogTask; Stop-ScheduledTask $TrayTask"
 Write-Host "To uninstall: .\uninstall_service.ps1"

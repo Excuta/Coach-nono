@@ -6,7 +6,9 @@ $ErrorActionPreference = "Stop"
 $TaskName     = "CoachNono-Capture"
 $WatchdogTask = "CoachNono-Watchdog"
 
-foreach ($t in @($TaskName, $WatchdogTask)) {
+$TrayTask = "CoachNono-Tray"
+
+foreach ($t in @($TaskName, $WatchdogTask, $TrayTask)) {
     $task = Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
     if (-not $task) {
         Write-Host "$t is not registered -- skipping."
