@@ -317,9 +317,10 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [ ] Coaching card in Session & Health: per-corner findings ranked by severity (E3)
 
 ### Phase E3 — Coaching Text (rule-based, zero GPU)
-- [ ] `analysis/coach_text.py`: template-based coaching messages from statistical findings
+- [x] `analysis/coach_text.py`: template-based coaching messages from statistical findings
       ("T3 apex: {val:.0f} km/h vs your usual {p50:.0f} km/h — losing ~{loss:.2f}s here")
-- [ ] Coaching card rendered as markdown in Session & Health page
+- [x] Coaching card rendered as markdown in Session & Health page (bordered container,
+      raw findings table collapsed under expander)
 
 ### Phase E4 — LLM Coach (GPU, on-demand, deferred)
 - [ ] `setups.py` rule advisor: symptom → setup-change direction

@@ -1187,23 +1187,36 @@ def _page_health():
 
     st.divider()
 
-    # Row J — Coaching notes
-    st.subheader("Coaching notes")
-    input_f = [f for f in findings if f["kind"] != "sector_delta"]
-    if not input_f:
-        st.caption("No input coaching findings for this lap.")
-    else:
-        rows = []
-        for f in sorted(input_f, key=lambda x: -x["severity"]):
-            d = f.get("detail") or {}
-            rows.append({
-                "Sector": f["corner"],
-                "Pos":    round(d.get("spline") or d.get("spline_start") or 0.0, 3),
-                "Finding": KIND_LABEL.get(f["kind"], f["kind"]),
-                "Sev":    round(f["severity"], 2),
-                "Fix":    d.get("fix", ""),
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    # Row J — Coaching card + notes
+    st.subheader("Coaching")
+
+    from coach.analysis.coach_text import build_coaching_card  # local import avoids circular
+
+    _game_h  = sel_sess.get("game", "acc")
+    _corners_h = load_corners(_game_h, sel_sess["track"])
+    _cnames    = {c["corner_index"]: c["name"] for c in _corners_h}
+    _total_delta = float(delta_df["delta"].iloc[-1]) if delta_df is not None and len(delta_df) else None
+
+    card_md = build_coaching_card(findings, sel_lap["lap_time"], _total_delta, _cnames)
+    with st.container(border=True):
+        st.markdown(card_md)
+
+    with st.expander("Raw findings table", expanded=False):
+        input_f = [f for f in findings if f["kind"] != "sector_delta"]
+        if not input_f:
+            st.caption("No input coaching findings for this lap.")
+        else:
+            rows = []
+            for f in sorted(input_f, key=lambda x: -x["severity"]):
+                d = f.get("detail") or {}
+                rows.append({
+                    "Corner": f["corner"],
+                    "Pos":    round(d.get("spline") or d.get("spline_start") or 0.0, 3),
+                    "Finding": KIND_LABEL.get(f["kind"], f["kind"]),
+                    "Sev":    round(f["severity"], 2),
+                    "Fix":    d.get("fix", ""),
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------------------------
 # PAGE 4 — Corner Analysis
