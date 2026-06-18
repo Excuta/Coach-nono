@@ -25,3 +25,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Claude Code machine-local settings (never commit)
+.claude/settings.local.json
+
+# Pre-publication scan output
+scan-reports/
