@@ -57,7 +57,7 @@ KIND_LABEL  = {
     "lockup":               "Lockup/ABS",       "steering_reversal":    "Steer instability",
     "throttle_spike":       "Throttle spike",   "short_shift":          "Short shift",
     "corner_overspeed":     "Corner overspeed",
-    # corner-baseline statistical findings (Phase E1)
+    # corner-baseline statistical findings
     "slow_apex":            "Slow apex",        "late_brake":           "Late brake",
     "delayed_throttle":     "Late throttle",    "steering_instability": "Steer corrections",
 }
@@ -1307,7 +1307,7 @@ def _page_corner_analysis():
     st.subheader("Corner breakdown")
 
     if not corner_stats:
-        st.caption("No corner stats for this lap — it may have been processed before Phase E1.")
+        st.caption("No corner stats for this lap — it may have been captured before corner analysis was active.")
         return
 
     stats_by_idx   = {r["corner_index"]: r for r in corner_stats}

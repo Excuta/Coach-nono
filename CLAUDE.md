@@ -1,7 +1,7 @@
 # Coach Nono — project instructions
 
 ## What this is
-Personal AI sim-racing coach for ACC. Named after Yahia's wife Nono — her real recorded voice is planned for coaching output (Phase E+, XTTS v2 zero-shot cloning). Always refer to this project as "Coach Nono", never "acc-coach" or "ACC AI Coach".
+Personal AI sim-racing coach for ACC. Named after Yahia's wife Nono. Always refer to this project as "Coach Nono", never "acc-coach" or "ACC AI Coach".
 
 ## Critical non-inferable facts
 
@@ -27,12 +27,9 @@ Personal AI sim-racing coach for ACC. Named after Yahia's wife Nono — her real
 - `fuel_used_lap` for `lap_index=0` is unreliable — outlap starts with garage-fill fuel state.
 - `lap_path` stored in `laps` table is an absolute container path (`/data/laps/...`). In `dashboard_v2.py`, use `Path(lap_path)` directly (or check `is_absolute()`) — do not unconditionally prepend `cfg.data_dir`.
 
-## Roadmap
-See `acc-coach-roadmap.md` — tick boxes as phases complete. Append to `PROGRESS.md` after each session.
+## Status
 
-**Current status:** Phases A–D complete. Extended telemetry (71 channels, extras table, coordinates table, dashboard_v2) done. Pipeline verified end-to-end on Silverstone with Ferrari 296 GT3.
-
-**Next:** Phase D threshold tuning (~20–40 real laps), then Phase E (setup advisor + LLM coach).
+**Release 1.0** — Phases A–E3 complete: capture agent (Win32 shared memory, 71 channels, 50 Hz), ingest pipeline, corner analysis engine (auto-detection + self-calibrating statistical baselines), coaching card, tyre/fuel analysis, setup advisor, per-lap BurntToast notifications, Streamlit dashboard (corner analysis, lap telemetry, track map, lap trends, session health, tyre & fuel).
 
 ## Commit convention
 Use the `nono-commit` skill. Subject: `[claude] <imperative verb phrase>`. No Co-Authored-By trailer.

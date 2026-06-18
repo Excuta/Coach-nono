@@ -55,16 +55,6 @@ class _Config:
         "Keep coaching notes concise and actionable.",
     )
 
-    # GPU / LLM coach
-    ollama_url: str = os.getenv("OLLAMA_URL", "http://coach-llm:11434")
-    coach_model: str = os.getenv("COACH_MODEL", "qwen2.5:7b-instruct-q4_K_M")
-
-    # TTS output (Phase E+): uses Nono's real voice via XTTS v2 zero-shot cloning.
-    # Set COACH_TTS=xtts and point TTS_VOICE_REF at a clean WAV sample of her voice.
-    # Leave empty for text-only output (default until voice pack recordings are ready).
-    coach_tts: str = os.getenv("COACH_TTS", "")
-    tts_voice_ref: str = os.getenv("TTS_VOICE_REF", "")  # path to Nono's reference WAV
-
     # Game version used to scope baselines — baselines from different major versions are never mixed.
     # Update this env var when ACC ships a major physics update (e.g. "1.11").
     game_version_major: str = os.getenv("GAME_VERSION_MAJOR", "1.10")

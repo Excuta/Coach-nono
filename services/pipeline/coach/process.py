@@ -200,7 +200,7 @@ def _save_delta_trace(lap_id: str, trace: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Corner analysis (Phase E1) — additive, never blocks existing pipeline
+# Corner analysis — additive, never blocks existing pipeline
 # ---------------------------------------------------------------------------
 
 def _get_or_detect_corners(game: str, track: str) -> list[dict]:
@@ -303,7 +303,7 @@ def _run_corner_analysis(
 
 
 # ---------------------------------------------------------------------------
-# Tyre analysis (Phase E3.5) — always runs, never blocks
+# Tyre analysis — always runs, never blocks
 # ---------------------------------------------------------------------------
 
 _COACHING_LOG_DIR = cfg.data_dir / "logs" / "process"
@@ -392,7 +392,7 @@ def _process_lap(lap: dict) -> None:
         input_findings = inputs.detect(aligned, thr)
         log.info("Input detectors: %d finding(s)", len(input_findings))
 
-    # Corner analysis — statistical findings, self-calibrating baselines (Phase E1)
+    # Corner analysis — statistical findings, self-calibrating baselines
     corner_findings = _run_corner_analysis(lap_id, aligned, game, car, track, valid)
 
     all_findings = input_findings + corner_findings
