@@ -163,21 +163,27 @@ def _process(meta_path: Path) -> None:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / meta["parquet_file"]
 
-    # --- Move parquet (handle already-moved case) ---
-    if parquet_src.exists():
-        shutil.move(str(parquet_src), str(dest_path))
-    elif not dest_path.exists():
+    # --- Validate before moving so a corrupt file stays in raw/ for inspection ---
+    validate_src = parquet_src if parquet_src.exists() else dest_path
+    if not validate_src.exists():
         log.error("Parquet missing from both raw and laps: %s", meta["parquet_file"])
         meta_path.unlink(missing_ok=True)
         return
 
-    # --- Validate ---
     try:
-        df = pd.read_parquet(dest_path)
+        df = pd.read_parquet(validate_src)
     except Exception as exc:
-        log.error("Cannot read parquet %s: %s", dest_path, exc)
+        log.error("Cannot read parquet %s: %s", validate_src, exc)
+        if validate_src == parquet_src:
+            # Leave parquet + meta.json in raw/ for retry / manual inspection
+            return
+        # Already in laps/ (crash-recovery case) — stop retrying, clean up meta
         meta_path.unlink(missing_ok=True)
         return
+
+    # --- Move parquet (handle already-moved case) ---
+    if parquet_src.exists():
+        shutil.move(str(parquet_src), str(dest_path))
 
     if len(df) < MIN_SAMPLES:
         log.warning("Lap %d has only %d samples — registered but may be partial", lap_index, len(df))
