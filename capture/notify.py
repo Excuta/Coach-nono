@@ -87,9 +87,10 @@ class Notifier:
         )
         try:
             subprocess.run(
-                ["powershell", "-NonInteractive", "-Command", cmd],
+                ["powershell", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", cmd],
                 timeout=5,
                 capture_output=True,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW
             )
         except Exception as exc:
             log.debug("Toast failed (BurntToast not installed?): %s", exc)

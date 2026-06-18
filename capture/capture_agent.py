@@ -152,6 +152,18 @@ def _pause_for_disk(notifier: Notifier, health: HealthReporter) -> None:
     health.update(state="live", sweep_trigger_active=False)
 
 
+def _replace_with_retry(src: Path, dst: Path, retries: int = 6, base_delay: float = 0.1) -> None:
+    """os.replace with exponential back-off for WinError 32 (file held by Defender/AV)."""
+    for attempt in range(retries):
+        try:
+            os.replace(src, dst)
+            return
+        except OSError as exc:
+            if attempt == retries - 1 or getattr(exc, "winerror", 0) != 32:
+                raise
+            time.sleep(base_delay * (2 ** attempt))  # 0.1, 0.2, 0.4, 0.8, 1.6 s
+
+
 def _write_lap(
     buf: list,
     session_id: str,
@@ -175,10 +187,11 @@ def _write_lap(
     meta_dst    = session_dir / f"{stem}.meta.json"
 
     # --- Atomic parquet write ---
-    tmp_p = parquet_dst.with_suffix(".parquet.tmp")
+    # PID suffix avoids WinError 32 when two instances race on the same tmp file.
+    tmp_p = parquet_dst.with_name(f"{stem}.{os.getpid()}.parquet.tmp")
     df = pd.DataFrame([asdict(s) for s in buf])
     df.to_parquet(tmp_p, index=False)
-    os.replace(tmp_p, parquet_dst)
+    _replace_with_retry(tmp_p, parquet_dst)
 
     # SHA-256 checksum for integrity verification by ingest / sweeper
     checksum = _sha256(parquet_dst)
@@ -189,9 +202,9 @@ def _write_lap(
         c_dir     = COORDS_DIR / session_id
         c_dir.mkdir(parents=True, exist_ok=True)
         c_parquet = c_dir / f"{stem}.parquet"
-        tmp_c     = c_parquet.with_suffix(".parquet.tmp")
+        tmp_c     = c_parquet.with_name(f"{stem}.{os.getpid()}.parquet.tmp")
         pd.DataFrame(coords).to_parquet(tmp_c, index=False)
-        os.replace(tmp_c, c_parquet)
+        _replace_with_retry(tmp_c, c_parquet)
         coords_file = f"{stem}.parquet"
 
     # --- Atomic meta write (always after parquet so ingest never sees meta without parquet) ---
@@ -209,7 +222,7 @@ def _write_lap(
     }
     tmp_m = meta_dst.with_suffix(".json.tmp")
     tmp_m.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    os.replace(tmp_m, meta_dst)
+    _replace_with_retry(tmp_m, meta_dst)
 
     lap_s = lap_time_ms / 1000.0
     m, s  = divmod(lap_s, 60)
