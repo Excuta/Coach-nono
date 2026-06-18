@@ -282,6 +282,7 @@ def run() -> None:
                 continue
 
             if raw is None:
+                health.update(state="idle")
                 time.sleep(POLL_INTERVAL)
                 continue
 
