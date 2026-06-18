@@ -1,21 +1,9 @@
 # Security Policy
 
-## Supported Versions
-
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+Coach Nono is a personal project. It runs entirely locally (Windows host + Docker on the same machine) and is not internet-facing. There are no stable release versions or long-term support commitments.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Report security issues via [GitHub private vulnerability reporting](https://github.com/Excuta/Coach-nono/security/advisories/new).
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Dependency CVEs are handled automatically via Dependabot. For anything else, expect a response within a few days.
