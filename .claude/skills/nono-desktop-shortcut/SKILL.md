@@ -11,7 +11,11 @@ Creates two artifacts:
 
 ## Project root
 
-`<YOUR_REPO_PATH>`
+Detect at invocation time — do not hardcode. Use PowerShell:
+
+    $root = (git rev-parse --show-toplevel) -replace '/', '\'
+
+Use `$root` wherever the project path is needed.
 
 ## Step 1 — Scan for scripts
 
@@ -77,7 +81,7 @@ Example output shape (not literal content):
 Run this PowerShell (substitute the actual project root path):
 
 ```powershell
-$root = '<YOUR_REPO_PATH>'
+$root = (git rev-parse --show-toplevel) -replace '/', '\'
 $ws   = New-Object -ComObject WScript.Shell
 $lnk  = $ws.CreateShortcut("$($ws.SpecialFolders('Desktop'))\Coach Nono.lnk")
 $lnk.TargetPath      = 'powershell.exe'
