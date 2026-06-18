@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "services" / "pipeline"))
 from coach.sources.acc import ACCSource  # noqa: E402
 
 # Capture-local modules (same directory; importable because script dir is on sys.path)
-from health import HealthReporter
+from health import HealthReporter, claim_lockfile, release_lockfile
 from logging_setup import setup_logging
 from notify import Notifier
 from recovery import run_recovery
@@ -238,6 +238,8 @@ def _write_lap(
 # ---------------------------------------------------------------------------
 
 def run() -> None:
+    lock = claim_lockfile(DATA_DIR)
+
     notifier = Notifier()
     health   = HealthReporter(DATA_DIR)
 
@@ -424,6 +426,7 @@ def run() -> None:
     finally:
         health.close()
         source.close()
+        release_lockfile(lock)
         log.info("Capture agent shut down.")
 
 

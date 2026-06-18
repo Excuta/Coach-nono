@@ -12,6 +12,50 @@ import os
 import time
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Single-instance lockfile — prevents service + manual launch from colliding
+# ---------------------------------------------------------------------------
+
+_LOCK_PATH: Path | None = None  # set by claim_lockfile(), cleared by release_lockfile()
+
+
+def claim_lockfile(data_dir: Path) -> Path:
+    """
+    Write a PID lockfile.  Raises RuntimeError if another instance is running.
+    Call once at process start, before any other setup.
+    """
+    lock = data_dir / "logs" / "capture" / "capture.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+
+    if lock.exists():
+        raw = lock.read_text(encoding="utf-8").strip()
+        try:
+            existing_pid = int(raw)
+            os.kill(existing_pid, 0)  # raises OSError if dead, passes if alive
+            raise RuntimeError(
+                f"Another capture agent is already running (PID {existing_pid}). "
+                f"Stop it first, or delete {lock} if stale."
+            )
+        except (ValueError, OSError):
+            logging.getLogger("capture.health").warning(
+                "Stale lockfile (PID %s no longer running) — overwriting", raw
+            )
+
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    global _LOCK_PATH
+    _LOCK_PATH = lock
+    return lock
+
+
+def release_lockfile(lock: Path | None = None) -> None:
+    """Delete the lockfile written by claim_lockfile()."""
+    target = lock or _LOCK_PATH
+    if target is not None:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+
 log = logging.getLogger("capture.health")
 
 _WRITE_INTERVAL = 2.0  # seconds between status.json writes

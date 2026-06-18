@@ -6,6 +6,16 @@
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# Guard: bail if the NSSM service is already capturing.
+# The Python lockfile also catches this, but failing here gives a cleaner message.
+$svc = Get-Service -Name "CoachNono-Capture" -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -eq "Running") {
+    Write-Host "CoachNono-Capture service is already running -- not starting a second instance."
+    Write-Host "  Stop service:   Stop-Service CoachNono-Capture"
+    Write-Host "  Check status:   .\status.ps1"
+    exit 1
+}
+
 # Find a real Python executable (skip the Microsoft Store stub)
 $python = (Get-Command python*.exe -ErrorAction SilentlyContinue |
     Where-Object { $_.Source -notlike "*WindowsApps*" } |
