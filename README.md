@@ -90,7 +90,7 @@ start http://localhost:8502
 
 | Action | Command |
 |--------|---------|
-| Start pipeline | `docker compose up -d db ingest process dashboard-v2` |
+| Start pipeline | `docker compose up -d db ingest process dashboard-v2 ingest-sweep` |
 | Rebuild after code changes | `docker compose up -d --build ingest process dashboard-v2` |
 | Stop everything | `docker compose down` |
 | Wipe DB volume *(destructive)* | `docker compose down -v` |
@@ -195,7 +195,7 @@ data/
   findings/     ← per-lap analysis artefacts written by process worker
   logs/
     capture/    ← capture agent logs + status.json heartbeat (readable by Docker services)
-    sweep/      ← ingest-sweep run log (planned)
+    sweep/      ← ingest-sweep run log
   config/
     thresholds.json   ← copy from thresholds.example.json and tune per car/track
 ```

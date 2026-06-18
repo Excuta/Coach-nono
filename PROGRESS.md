@@ -77,3 +77,58 @@
 **What's next:** Tune thresholds against real laps (~20–40 laps on one combo)
 
 **Blockers:** None — threshold tuning requires real driving data
+
+---
+
+## 2026-06-18 — Extended telemetry + dashboard_v2
+
+**What changed:**
+- Extended capture to 71 channels (full ACC physics/graphics structs via `ExtendedSample`)
+- Added `extras` table (31 per-lap aggregates: g-forces, tyre wear, damage, aid usage, temps, etc.)
+- Added `coordinates` table (XYZ world positions when `CAPTURE_COORDS=true`)
+- Built `dashboard_v2.py` on port 8502: full telemetry explorer, delta, coaching notes, session health, extras
+- Pipeline verified end-to-end on Silverstone and Paul Ricard, Ferrari 296 GT3
+
+**What's next:** Robust capture hardening, then threshold tuning
+
+**Blockers:** None
+
+---
+
+## 2026-06-18 — Public GitHub push
+
+**What changed:**
+- Scrubbed PII from full git history (git-filter-repo, two passes: compound paths first, then tokens)
+- Moved docker-compose credentials to `.env` with `${VAR:-default}` substitution
+- Added MIT LICENSE, SECURITY.md, Dependabot config
+- Added gitleaks pre-commit hook + `scripts/scan_secrets.ps1` for ongoing auditing
+- Pushed to github.com/Excuta/Coach-nono
+
+**What's next:** Robust capture migration
+
+---
+
+## 2026-06-18 — Robust Capture: Phases 1–3
+
+**What changed:**
+- Split `capture_agent.py` into modules: `health.py` (heartbeat + lockfile), `recovery.py` (startup scan), `notify.py` (BurntToast + webhook), `logging_setup.py` (rotating JSON logs)
+- Replaced NSSM service with Windows Scheduled Task (`CoachNono-Capture`, AtLogon, Interactive) — NSSM rejects MSA credentials on Windows 11; Task Scheduler runs in the user's interactive session without stored password
+- Fixed idle heartbeat bug: `raw is None` path (ACC not running) skipped `health.update()`, causing permanently stale heartbeat
+- Fixed `dashboard_v2` progress bar crash: ACC sends negative mechanical damage before session init; clamped to `[0.0, 1.0]`
+
+**What's next:** Phase 4 watchdog + tray icon
+
+---
+
+## 2026-06-18 — Robust Capture: Phase 4 + ingest-sweep + bug fixes
+
+**What changed:**
+- Watchdog task (`CoachNono-Watchdog`): single-shot PowerShell, repeats every 5 min via Task Scheduler repetition trigger; restarts capture if heartbeat stale >45s, fires BurntToast on restart
+- Tray icon (`CoachNono-Tray`): pystray viewer, green/amber/red circle by state, right-click menu (open dashboard, stop/start capture, exit); polls `status.json` every 5s
+- Confirmed `ingest-sweep` running (was registered but never started); 30-min adaptive cycle, defers to 5 min when ACC is live
+- Fixed concurrent-instance parquet corruption: two capture instances raced on the same `.parquet.tmp` — now uses PID-unique tmp filenames + exponential back-off retry for `os.replace()` (handles Defender/AV holds and sharing violations)
+- Fixed `notify.py` terminal flash: BurntToast PowerShell subprocess now spawned with `-WindowStyle Hidden` + `CREATE_NO_WINDOW`; console was briefly visible on every lap completion
+- Fixed `ingest.py` validate-before-move: corrupt parquets now stay in `raw/` with `meta.json` intact for retry/inspection instead of stranding in `laps/` with no DB record
+- Added `capture/recover_failed_laps.py`: one-shot tool to rebuild parquet + `meta.json` from `.failed.json` dumps; used to recover 8 Silverstone laps from today's incident
+
+**Blockers:** None — Phase E ready when ~20–40 laps of threshold data available

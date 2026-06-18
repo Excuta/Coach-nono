@@ -274,7 +274,7 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [x] `run_capture.ps1` host launcher; verify a real lap produces a parquet
 - [x] `ingest.py`: watch `raw/`, validate, create `sessions`/`laps` rows (status=pending),
       move file `raw/ → laps/`
-- [ ] End-to-end smoke test: drive 1 lap → row appears with status=pending
+- [x] End-to-end smoke test: drive 1 lap → row appears with status=pending
 
 ### Phase C — Tier 1: delta / "finds gaps"
 - [x] `align.py`: resample a lap onto a common spline/distance grid
@@ -291,6 +291,8 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 - [x] `setups.py`: parse + write ACC setup JSON; diff two setups
 - [x] Dashboard: per-corner coaching notes
 - [ ] Tune thresholds against ~20–40 real laps
+
+> 56+ laps recorded as of 2026-06-18 across Paul Ricard and Silverstone (Ferrari 296 GT3). Threshold tuning in progress.
 
 ### Phase E — Tier 2.5 + Tier 3: setup advisor + LLM coach
 - [ ] `setups.py` rule advisor: symptom → setup-change direction (+ optional RAG over setup notes)
@@ -310,8 +312,21 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 ### Phase F — Hardening
 - [ ] Stale-lease reclaim on worker startup
 - [ ] Retention job: `raw → archive` after `done`
-- [ ] `README.md` quickstart; `PROGRESS.md` current
+- [x] `README.md` quickstart
+- [ ] `PROGRESS.md` current
 - [ ] Generalization pass on a 2nd car/track (no hard-coding leaked in)
+
+### Phase R — Robust Capture (complete)
+- [x] Extended telemetry: 71 channels, extras table (31 per-lap aggregates), coordinates table
+- [x] dashboard_v2 on :8502 replacing dashboard.py
+- [x] Split capture_agent into modules: health.py, recovery.py, notify.py, logging_setup.py
+- [x] Windows Scheduled Task (CoachNono-Capture) — replaces NSSM; works with MSA accounts on Windows 11
+- [x] ingest-sweep service (adaptive disk management + catch-up ingest, 30-min cycle)
+- [x] Watchdog task (CoachNono-Watchdog, every 5 min, restarts on stale heartbeat >45s)
+- [x] Tray icon (CoachNono-Tray, pystray, green/amber/red by state)
+- [x] Public GitHub push (PII scrub, .env migration, gitleaks pre-commit hook, MIT LICENSE)
+- [x] Fix concurrent-instance parquet corruption (PID-unique tmp names + WinError 32 retry)
+- [x] Fix ingest validate-before-move (corrupt files stay in raw/ for inspection)
 
 ---
 
