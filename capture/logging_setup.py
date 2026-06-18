@@ -5,14 +5,29 @@ File:    JSON lines, size-rotating with gzip on rollover, capped at ~50 MB.
 """
 from __future__ import annotations
 
+import ctypes
 import gzip
 import json
 import logging
 import logging.handlers
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
+
+def _has_console() -> bool:
+    """Return True if a real console window is attached to this process.
+
+    In Python 3.12+ pythonw.exe exposes sys.stderr as a live TextIOWrapper
+    rather than None.  Writing to it when no console exists causes Windows to
+    allocate a new console window — visible as a brief flash on lap crossing.
+    GetConsoleWindow() == 0 is the reliable way to detect windowless mode.
+    """
+    try:
+        return ctypes.windll.kernel32.GetConsoleWindow() != 0
+    except Exception:
+        return sys.stderr is not None
 
 
 class _JsonFormatter(logging.Formatter):
@@ -77,10 +92,13 @@ def setup_logging(
     root = logging.getLogger()
     root.setLevel(level)
 
-    # Console handler — always present (same output as the original basicConfig)
-    ch = logging.StreamHandler()
-    ch.setFormatter(console_fmt)
-    root.addHandler(ch)
+    # Console handler — only when a real console exists.
+    # pythonw.exe in Python 3.12+ exposes sys.stderr as a live stream; writing
+    # to it without an attached console causes Windows to flash a terminal window.
+    if _has_console():
+        ch = logging.StreamHandler()
+        ch.setFormatter(console_fmt)
+        root.addHandler(ch)
 
     if log_dir is not None:
         log_dir = Path(log_dir)
