@@ -294,20 +294,40 @@ run the capture agent while you drive. (MoTeC `.ld` export is a separate optiona
 
 > 56+ laps recorded as of 2026-06-18 across Paul Ricard and Silverstone (Ferrari 296 GT3). Threshold tuning in progress.
 
-### Phase E — Tier 2.5 + Tier 3: setup advisor + LLM coach
-- [ ] `setups.py` rule advisor: symptom → setup-change direction (+ optional RAG over setup notes)
-- [ ] `coach-llm` (Ollama) up under gpu profile; pull a 7–8B Q4 model; confirm it fits 8 GB
+### Phase E1 — Corner Analysis Engine (self-calibrating, no user-facing thresholds)
+- [x] `db/init/03_corners.sql`: `corners`, `corner_stats`, `corner_baselines` tables
+- [x] `analysis/corners.py`: auto-detect corners per track from speed minima; extract 10 per-corner
+      metrics per lap (entry/apex/exit speed, brake point, throttle point, coast, overlap, lat-g,
+      slip, steer reversals)
+- [x] `analysis/db_ops.py`: store corners + corner_stats; update running percentile baselines
+      (P10–P90) keyed by game + `GAME_VERSION_MAJOR` env var + track + car
+- [x] `analysis/findings.py`: statistical findings when z-score exceeds per-metric threshold —
+      no hardcoded threshold visible to user; baselines need ≥5 valid laps per corner
+- [x] Wire into `process.py` with graceful fallback (existing `inputs.py` path unchanged)
+- [x] Verify: `corner_stats` and `corner_baselines` rows appear after processing 5+ laps
+      → 6 corners detected on Paul_Ricard; 30 corner_stats rows; baselines live at sample_count=5
+
+### Phase E2 — Dashboard Revamp
+- [ ] New page **① Corner Analysis**: corner table (entry/apex/exit speed, findings chips);
+      click-to-expand detail panel (speed+pedal overlay vs P50 ghost); multi-lap speed overlay
+- [ ] New page **④ Lap Trends**: per-corner metric over lap sequence with P50 band
+- [ ] Enhance **③ Track Map**: corner labels (T1…Tn) overlaid at apex spline positions
+- [ ] Coaching card in Session & Health: per-corner findings ranked by severity
+
+### Phase E3 — Coaching Text (rule-based, zero GPU)
+- [ ] `analysis/coach_text.py`: template-based coaching messages from statistical findings
+      ("T3 apex: {val:.0f} km/h vs your usual {p50:.0f} km/h — losing ~{loss:.2f}s here")
+- [ ] Coaching card rendered as markdown in Session & Health page
+
+### Phase E4 — LLM Coach (GPU, on-demand, deferred)
+- [ ] `setups.py` rule advisor: symptom → setup-change direction
+- [ ] `coach-llm` (Ollama) up under gpu profile; pull a 7–8B Q4 model; confirm fits 8 GB
 - [ ] `sessions.py`: store history, track PB progression, generate practice-drill plans
-- [ ] `coach_service.py`: feed **computed** findings + history to the LLM (it narrates, never invents
-      numbers); output coaching + next-session plan using the **Coach Nono** persona (female voice,
-      direct + encouraging tone — defined in `config.py:coach_persona`)
+- [ ] `coach_service.py`: feed computed findings + history to LLM (narrates, never invents numbers);
+      output coaching + next-session plan using **Coach Nono** persona
 - [ ] Dashboard "Coach" tab (chat + session plan); verify GPU can be brought up/down cleanly
-- [ ] **Voice output (optional — Nono's real voice):** Yahia is building a Crew Chief voice pack
-      from Nono's recordings. Reuse those WAV samples to synthesize coaching output in her actual
-      voice via **XTTS v2** (Coqui) zero-shot cloning — provide a reference clip, it runs on the
-      RTX 5060 but shares VRAM with the LLM, so bring coach-llm down first or quantise further.
-      Alt: **RVC** (voice conversion) on top of any TTS output, lighter on VRAM.
-      Config hook: `COACH_TTS=xtts` + `TTS_VOICE_REF=/data/reference/nono_voice.wav`.
+- [ ] **Voice output (optional):** XTTS v2 zero-shot cloning on Nono's voice recordings.
+      Config: `COACH_TTS=xtts` + `TTS_VOICE_REF=/data/reference/nono_voice.wav`.
 
 ### Phase F — Hardening
 - [ ] Stale-lease reclaim on worker startup

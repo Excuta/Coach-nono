@@ -21,6 +21,9 @@ from coach.config import cfg
 from coach.db import conn
 from coach.delta import compute_delta
 from coach import inputs
+from coach.analysis import corners as corner_mod
+from coach.analysis import db_ops as adb
+from coach.analysis import findings as afind
 
 logging.basicConfig(
     level=cfg.log_level,
@@ -196,6 +199,109 @@ def _save_delta_trace(lap_id: str, trace: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Corner analysis (Phase E1) — additive, never blocks existing pipeline
+# ---------------------------------------------------------------------------
+
+def _get_or_detect_corners(game: str, track: str) -> list[dict]:
+    """Return stored corner rows; detect and store them if first time for this track."""
+    c = conn()
+    stored = adb.get_corners(c, game, track)
+    if stored:
+        return stored
+
+    done_count = adb.count_done_laps(c, game, track)
+    if done_count < corner_mod.MIN_CORNER_LAPS:
+        log.debug(
+            "Corner detection deferred: %d/%d done laps for %s/%s",
+            done_count, corner_mod.MIN_CORNER_LAPS, game, track,
+        )
+        return []
+
+    lap_paths = adb.get_fast_lap_paths(c, game, track, n=corner_mod.MIN_CORNER_LAPS)
+    speed_traces = []
+    for p in lap_paths:
+        try:
+            raw = pd.read_parquet(p)
+            aligned_ref = align(raw)
+            speed_traces.append(aligned_ref["speed"].values)
+        except Exception:
+            log.warning("Could not load lap for corner detection: %s", p)
+
+    if len(speed_traces) < corner_mod.MIN_CORNER_LAPS:
+        log.debug("Not enough readable laps for corner detection on %s/%s", game, track)
+        return []
+
+    detected = corner_mod.detect_corners(speed_traces)
+    if not detected:
+        return []
+
+    stored = adb.store_corners(c, game, track, detected)
+    log.info("Stored %d corners for %s/%s", len(stored), game, track)
+    return stored
+
+
+def _run_corner_analysis(
+    lap_id: str,
+    aligned: pd.DataFrame,
+    game: str,
+    car: str,
+    track: str,
+    valid: bool,
+) -> list[dict]:
+    """Extract corner stats, update baselines, and return statistical findings.
+
+    Always returns a list (empty on error or when baselines are still learning).
+    Never raises — failures are logged and swallowed so the main pipeline continues.
+    """
+    if not valid:
+        return []
+
+    try:
+        corner_rows_db = _get_or_detect_corners(game, track)
+        if not corner_rows_db:
+            return []
+
+        corner_objs = [
+            corner_mod.Corner(
+                index=r["corner_index"],
+                name=r["name"] or f"T{r['corner_index']}",
+                spline_start=r["spline_start"],
+                spline_apex=r["spline_apex"],
+                spline_end=r["spline_end"],
+            )
+            for r in corner_rows_db
+        ]
+        corner_id_map = {r["corner_index"]: r["id"] for r in corner_rows_db}
+
+        stats_list = corner_mod.extract_corner_stats(aligned, corner_objs)
+        if not stats_list:
+            return []
+
+        c = conn()
+        adb.store_corner_stats(c, lap_id, cfg.game_version_major, stats_list, corner_id_map)
+
+        # Update baselines and generate findings for each corner
+        all_findings: list[dict] = []
+        for stats in stats_list:
+            cidx = stats["corner_index"]
+            cid = corner_id_map.get(cidx)
+            if cid is None:
+                continue
+            adb.update_baselines(c, game, cfg.game_version_major, track, car, cid)
+            baselines = adb.get_baselines(c, game, cfg.game_version_major, track, car, cid)
+            corner_findings = afind.score_corner(cidx, stats, baselines)
+            all_findings.extend(corner_findings)
+
+        if all_findings:
+            log.info("Corner analysis: %d finding(s) for lap %s", len(all_findings), lap_id)
+        return all_findings
+
+    except Exception:
+        log.exception("Corner analysis failed for lap %s — skipping", lap_id)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Core processing
 # ---------------------------------------------------------------------------
 
@@ -224,21 +330,24 @@ def _process_lap(lap: dict) -> None:
         input_findings = inputs.detect(aligned, thr)
         log.info("Input detectors: %d finding(s)", len(input_findings))
 
+    # Corner analysis — statistical findings, self-calibrating baselines (Phase E1)
+    corner_findings = _run_corner_analysis(lap_id, aligned, game, car, track, valid)
+
     if pb_meta is None or pb_aligned is None:
         # First lap for this combo — register as PB and skip delta
         log.info("No PB found for %s/%s/%s — registering lap %s as PB", game, car, track, lap_id)
         if valid:
             _save_pb_aligned(game, car, track, aligned)
             _upsert_pb(game, car, track, lap_id, lap_time)
-        if input_findings:
-            _insert_findings(lap_id, input_findings)
+        if input_findings or corner_findings:
+            _insert_findings(lap_id, input_findings + corner_findings)
         _mark_done(lap_id)
         return
 
     # Compute delta vs PB
     trace, sectors = compute_delta(aligned, pb_aligned)
     _save_delta_trace(lap_id, trace)
-    _insert_findings(lap_id, _sectors_to_findings(sectors) + input_findings)
+    _insert_findings(lap_id, _sectors_to_findings(sectors) + input_findings + corner_findings)
 
     total_delta = float(trace["delta"].iloc[-1])
     log.info("Delta vs PB: %+.3f s  (worst sector: %.3f s)",

@@ -132,3 +132,23 @@
 - Added `capture/recover_failed_laps.py`: one-shot tool to rebuild parquet + `meta.json` from `.failed.json` dumps; used to recover 8 Silverstone laps from today's incident
 
 **Blockers:** None — Phase E ready when ~20–40 laps of threshold data available
+
+---
+
+## 2026-06-18 — Phase E1: Corner Analysis Engine
+
+**What changed:**
+- `db/init/03_corners.sql`: three new tables — `corners` (geometry per track), `corner_stats` (10 metrics per lap × per corner), `corner_baselines` (P10–P90 percentile stats, keyed by game + game_version_major + track + car). Migration applied live without blocking ingest.
+- `services/pipeline/coach/analysis/corners.py`: auto-detects corners by finding speed minima in averaged aligned speed traces (scipy `find_peaks` with prominence + distance guards). Extracts 10 metrics: entry/apex/exit speed, brake point, throttle point, coast duration, trail-brake overlap, max lat-g, min slip ratio, steer reversals.
+- `services/pipeline/coach/analysis/db_ops.py`: stores corners + corner_stats; recomputes running percentile baselines after each lap.
+- `services/pipeline/coach/analysis/findings.py`: generates statistical findings (6 types) when z-score exceeds per-metric threshold vs the driver's own baseline. No user-facing thresholds — sensitivity is auto-calibrated. Requires ≥5 valid laps per corner before activating.
+- `services/pipeline/coach/process.py`: wired new analysis after alignment, merged with existing `inputs.py` findings. Fully wrapped in try/except — any failure logs and falls back gracefully.
+- `config.py` + `.env.example`: added `GAME_VERSION_MAJOR` (default `"1.10"`) to scope baselines per ACC major version.
+
+**Verified:**
+- 6 corners detected on Paul_Ricard from 3 fastest laps
+- 30 corner_stats rows populated (5 laps × 6 corners)
+- Baselines live at sample_count=5; statistical findings flowing (4 findings on test lap)
+- Ingest was never blocked; process service restarted cleanly
+
+**What's next:** Phase E2 — Dashboard revamp (Corner Analysis page, Lap Trends page, enhanced Track Map)
