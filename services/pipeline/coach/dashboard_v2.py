@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -127,8 +128,10 @@ _STEP_COLS = {
 
 @st.cache_data(show_spinner="Resampling telemetry…")
 def align_extended(lap_path: str) -> pd.DataFrame | None:
-    full = cfg.data_dir / lap_path
-    if not full.exists():
+    if not lap_path:
+        return None
+    full = Path(lap_path) if Path(lap_path).is_absolute() else cfg.data_dir / lap_path
+    if not full.is_file():
         return None
     try:
         raw = pd.read_parquet(full)
@@ -318,9 +321,8 @@ if sel_compare == "PB":
                    "WHERE p.game=%s AND p.car=%s AND p.track=%s LIMIT 1",
                    (sel_sess.get("game", "acc"), sel_sess["car"], sel_sess["track"]))
     ghost_lap_path = pb_df[0]["id"] if pb_df else None
-    ghost_gx = align_extended(
-        next((l["lap_path"] for l in done_laps if l["id"] == ghost_lap_path), "")
-    ) if ghost_lap_path else None
+    ghost_match = next((l["lap_path"] for l in done_laps if l["id"] == ghost_lap_path), None)
+    ghost_gx = align_extended(ghost_match) if ghost_match else None
 else:
     ghost_lap = next((l for l in done_laps if l["id"] == sel_compare), None)
     ghost_gx  = align_extended(ghost_lap["lap_path"]) if ghost_lap else None
