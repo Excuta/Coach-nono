@@ -1,7 +1,5 @@
 # Coach Nono
 
-A WIP data pipeline for ACC which might eventually reach an ai coach voiced by my wife
-
 Captures full telemetry from ACC's Win32 shared memory on the Windows host (~50 Hz, 71 channels), processes each lap through a Docker pipeline that auto-detects corners, computes delta traces, detects driving mistakes with self-calibrating baselines, and stores per-lap aggregates — then surfaces everything in a Streamlit dashboard with coaching cards and tyre/fuel analysis.
 
 ---
