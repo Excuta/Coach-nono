@@ -141,6 +141,7 @@ def run() -> None:
     lap_buf: list = []
     coords_buf: list = []
     prev_completed: int = 0
+    prev_session_index: int = -1
     lap_valid: bool = True    # tracks whether current lap is still valid
 
     try:
@@ -192,44 +193,27 @@ def run() -> None:
                 }
                 t0 = time.monotonic()
                 prev_completed = g.completed_lap
+                prev_session_index = g.session_index
                 lap_valid = True
                 log.info("Session started: %s  (car=%s  track=%s)", session_id, car, track)
 
             else:
-                # ---- Detect context change while live (car/track/session-type switched) ----
-                # ACC can transition to a new session without briefly dropping out of
-                # ACC_LIVE, so we cannot rely on the status check alone.
-                sc_now = source.context(raw)
-                new_car = sc_now.car or ""
-                new_track = sc_now.track or ""
-                if (
-                    (new_car and new_car != ctx["car"])
-                    or (new_track and new_track != ctx["track"])
-                    or (sc_now.session_type and sc_now.session_type != ctx["session_type"])
-                ):
+                # ---- Detect new session via session_index (most reliable signal) ----
+                # session_index increments for every new ACC session regardless of
+                # whether car/track/type changed or status briefly dropped.
+                if g.session_index != prev_session_index:
                     log.info(
-                        "Session context changed %s/%s → %s/%s — starting new session",
-                        ctx["car"], ctx["track"],
-                        new_car or "?", new_track or "?",
+                        "New session detected (session_index %d→%d) — resetting",
+                        prev_session_index, g.session_index,
                     )
                     session_id = None
                     lap_buf = []
                     coords_buf = []
                     prev_completed = 0
+                    prev_session_index = -1
                     continue
 
-            # ---- Detect lap-counter regression (session restart, same context) ----
             completed = g.completed_lap
-            if completed < prev_completed:
-                log.info(
-                    "Lap counter regressed %d→%d — starting new session",
-                    prev_completed, completed,
-                )
-                session_id = None
-                lap_buf = []
-                coords_buf = []
-                prev_completed = 0
-                continue
 
             # ---- Accumulate sample ----
             t = time.monotonic() - t0
