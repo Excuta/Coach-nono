@@ -31,7 +31,7 @@ logs-process:
 	docker compose logs -f process
 
 logs-dashboard:
-	docker compose logs -f dashboard
+	docker compose logs -f dashboard-v2
 
 # Open a psql shell in the db container
 psql:

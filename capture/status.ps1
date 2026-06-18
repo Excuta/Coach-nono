@@ -31,7 +31,7 @@ try {
 } catch { }
 
 if ($dockerOk -and $psOutput) {
-    $want = @("db", "ingest", "process", "dashboard-v2")
+    $want = @("db", "ingest", "process", "dashboard-v2", "ingest-sweep")
     $found = @{}
     $psOutput | ForEach-Object {
         $parts = $_ -split ",", 2
