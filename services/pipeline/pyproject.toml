@@ -11,7 +11,7 @@ dependencies = [
     "psycopg2-binary>=2.9",
     # Data / parquet
     "pyarrow>=15.0",
-    "pandas>=2.2",
+    "pandas>=3.0.3",
     "numpy>=1.26",
     # Signal processing (align, delta)
     "scipy>=1.13",
